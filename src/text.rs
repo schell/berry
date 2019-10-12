@@ -6,7 +6,7 @@ use sdl2::video::WindowContext;
 
 
 /// Texturize a string of text in a font and color.
-pub fn cache<'ctx, 'a>(
+pub fn cache<'ctx>(
   s: &str,
   c: Color,
   font: &Font,
