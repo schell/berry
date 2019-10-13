@@ -73,11 +73,12 @@ impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
   type SystemData = (
     Entities<'a>,
     ReadStorage<'a, Position>,
+    WriteStorage<'a, Size>,
     ReadStorage<'a, Text>,
     ReadStorage<'a, WidgetType>,
   );
 
-  fn run(&mut self, (entities, positions, texts, wtypes): Self::SystemData) {
+  fn run(&mut self, (entities, positions, mut sizes, texts, wtypes): Self::SystemData) {
     let tex_creator =
       self
       .tex_creator
@@ -159,9 +160,19 @@ impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
         self
         .widget_cache
         .contains_key(&ent.id());
+      // Get the size of the widget and make sure it's stored
       let (w, h) =
         self
         .size_for_widget(&texts, &ent, wtype);
+      sizes
+        .insert(
+          ent,
+          Size{
+            width: w,
+            height: h
+          }
+        )
+        .unwrap();
       if !is_cached {
         println!("Cacheing widget {:?} {:?}", ent, wtype);
         let mut tex =
