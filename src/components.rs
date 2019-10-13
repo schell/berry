@@ -15,11 +15,11 @@ use super::UI;
 #[derive(Component, Debug)]
 #[storage(VecStorage)]
 pub struct Position {
-  x: i32,
-  y: i32
+  pub x: i32,
+  pub y: i32
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Hash, Eq)]
 pub struct Color {
   pub r: u8,
   pub g: u8,
@@ -27,7 +27,7 @@ pub struct Color {
   pub a: u8
 }
 
-#[derive(Component, Debug)]
+#[derive(Clone, Component, Debug, PartialEq, Hash, Eq)]
 #[storage(VecStorage)]
 pub struct Text {
   pub font_path: String,
@@ -52,7 +52,6 @@ impl Text {
     text.text = s.to_string();
     text
   }
-
 }
 
 
@@ -65,6 +64,14 @@ pub struct Name(String);
 #[storage(VecStorage)]
 pub enum WidgetType {
   Label
+}
+
+
+#[derive(Component, Debug)]
+#[storage(VecStorage)]
+pub struct Size {
+  width: u32,
+  height: u32
 }
 
 

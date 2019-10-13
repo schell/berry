@@ -254,7 +254,7 @@ impl<'a, 'b> UI<'a, 'b> {
 
 
 fn main() {
-  let (_sdl, mut canvas, tex_creator, ttf) =
+  let (sdl, mut canvas, tex_creator, ttf) =
     new_contexts("berry playground", (800, 600));
 
   let mut ui =
@@ -295,23 +295,24 @@ fn main() {
 //    .color(Color::RGB(255, 255, 255))
 //    .position((button_width as i32 + 4, 0));
 //
+  let mut event_pump =
+    sdl
+    .event_pump()
+    .unwrap();
+
   'mainloop: loop {
+    let may_update:Option<Update> =
+      event_pump
+      .wait_event_timeout(1000/12)
+      .map(|event| mk_update(&event))
+      .unwrap_or(None);
+
+    if may_update == Some(Update::Quit) {
+      break 'mainloop;
+    }
+
     ui
       .maintain();
-//    let may_update =
-//      ui
-//      .wait_event_timeout(1000/12);
-//    if may_update == Some(Update::Quit) {
-//      break 'mainloop;
-//    }
-//
-//    ui
-//      .canvas
-//      .set_draw_color(Color::RGB(128, 128, 128));
-//    ui
-//      .canvas
-//      .clear();
-
     //ui
     //  .draw(&label, &mut fonts, &mut cache)
 //
