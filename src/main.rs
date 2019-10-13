@@ -3,24 +3,22 @@ extern crate specs;
 #[macro_use]
 extern crate specs_derive;
 
-use sdl2::{EventPump, Sdl};
+use sdl2::Sdl;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use sdl2::render::{BlendMode, Texture, TextureCreator, WindowCanvas};
-use sdl2::ttf::{Font, Sdl2TtfContext};
+use sdl2::render::{BlendMode, TextureCreator, WindowCanvas};
+use sdl2::ttf::Sdl2TtfContext;
 use sdl2::video::WindowContext;
 
-use std::collections::HashMap;
-use std::path::Path;
+use specs::prelude::{Dispatcher, DispatcherBuilder, World, WorldExt};
 
-use specs::prelude::{Component, Dispatcher, DispatcherBuilder, VecStorage, World, WorldExt};
-
+pub mod components;
 pub mod systems;
-pub mod text;
 
 use systems::drawing::*;
+use components::*;
 
 
 //pub struct UI {
@@ -223,27 +221,59 @@ pub fn mk_update(event: &Event) -> Option<Update> {
 }
 
 
+pub struct UI<'a, 'b> {
+  world: World,
+  dispatcher: Dispatcher<'a, 'b>
+}
+
+
+impl<'a, 'b> UI<'a, 'b> {
+  pub fn new<'c, 'd>(builder: DispatcherBuilder<'c, 'd>) -> UI<'c, 'd>{
+    let mut world
+      = World::new();
+    let mut dispatcher =
+      builder
+      .build();
+    dispatcher
+      .setup(&mut world);
+    UI {
+      world,
+      dispatcher
+    }
+  }
+
+  pub fn maintain(&mut self) {
+    self
+      .dispatcher
+      .dispatch(&mut self.world);
+    self
+      .world
+      .maintain()
+  }
+}
+
+
 fn main() {
-  let (sdl, mut canvas, tex_creator, ttf) =
+  let (_sdl, mut canvas, tex_creator, ttf) =
     new_contexts("berry playground", (800, 600));
 
-  let mut world =
-    World::new();
+  let mut ui =
+    UI::new(
+      DispatcherBuilder::new()
+        .with_thread_local(DrawingSystem::new(
+          &mut canvas,
+          &tex_creator,
+          &ttf
+        ))
+    );
 
-  let mut dispatcher =
-    DispatcherBuilder::new()
-    .with_thread_local(DrawingSystem::new(
-      &mut canvas,
-      &tex_creator,
-      &ttf
-    ))
-    .build();
-
-  dispatcher
-    .setup(&mut world);
-
-//  let label =
-//    Label::new();
+  let _label =
+    Label::new()
+    .text(
+      Text::new()
+        .text("Hello World!")
+    )
+    .build(&ui);
 
 //  let mut button:Button =
 //    Button::new()
@@ -266,11 +296,8 @@ fn main() {
 //    .position((button_width as i32 + 4, 0));
 //
   'mainloop: loop {
-    dispatcher
-      .dispatch(&mut world);
-    world
-      .maintain()
-
+    ui
+      .maintain();
 //    let may_update =
 //      ui
 //      .wait_event_timeout(1000/12);
