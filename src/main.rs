@@ -72,7 +72,8 @@ pub fn new_contexts(
   let ctx =
     sdl2::init()
     .expect("Could not create sdl2 context.");
-  let vsys =
+  lsudo apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+et vsys =
     ctx
     .video()
     .expect("Could not init video system.");

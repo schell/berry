@@ -14,6 +14,7 @@ pub struct EventSystem;
 
 impl<'a> System<'a> for EventSystem {
   type SystemData = (
-    ReadStorage<'a, Sizes>
+    ReadStorage<'a, Position>
+    ReadStorage<'a, Size>
   );
 }
