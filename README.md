@@ -11,3 +11,8 @@ First get the sdl2 libs:
 sudo apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
 ```
 then `cargo build`.
+
+## What it is
+Under the hood `berry` is the `specs` entity component system paired with a
+simple declarative 2d graphics API and the Cassowary linear constraint solving
+algorithm.

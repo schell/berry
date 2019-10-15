@@ -10,6 +10,7 @@ use specs::prelude::{
 };
 
 use super::UI;
+use super::picture::{Picture, PictureCmd};
 
 
 #[derive(Component, Debug)]
@@ -61,6 +62,21 @@ pub struct Name(String);
 
 
 #[derive(Component, Debug)]
+#[storage(HashMapStorage)]
+pub struct Container {
+  pub items: Vec<Entity>
+}
+
+
+#[derive(Component, Debug)]
+#[storage(HashMapStorage)]
+pub struct ContainerItem {
+  pub parent: Entity,
+  pub offset: (i32, i32)
+}
+
+
+#[derive(Component, Debug)]
 #[storage(VecStorage)]
 pub enum WidgetType {
   Label
@@ -75,26 +91,34 @@ pub struct Size {
 }
 
 
-pub struct Label {
+pub struct TextBuilder {
   position: Position,
   text: Text,
-  //color: Color,
   name: Option<Name>
 }
 
 
-impl Label {
-  pub fn new() -> Label {
-    Label {
+impl TextBuilder {
+  pub fn new() -> TextBuilder {
+    TextBuilder {
       position: Position{ x: 0, y: 0 },
       text: Text::new(),
       name: None
     }
   }
 
-  pub fn text(self, t: Text) -> Self {
+  pub fn text(self, t: &str) -> Self {
     let mut label = self;
-    label.text = t;
+    label.text.text = t.to_string();
+    label
+  }
+
+  pub fn color(self, r: u8, g: u8, b: u8, a:u8) -> Self {
+    let mut label = self;
+    label.text.text_color =
+      Color {
+        r, g, b, a
+      };
     label
   }
 
@@ -109,7 +133,6 @@ impl Label {
       .create_entity(&entities)
       .with(self.position)
       .with(self.text)
-      .with(WidgetType::Label)
       .build();
 
     self
@@ -117,6 +140,151 @@ impl Label {
       .map(|name| {
         lazy
           .insert(ent, name);
+      });
+
+    ent
+  }
+}
+
+
+// TODO: Maybe kill all the container stuff because we have cassowary
+pub struct ContainerBuilder {
+  pub items: Vec<(Entity, (i32, i32))>,
+  pub position: Position,
+  pub name: Option<Name>
+}
+
+
+impl ContainerBuilder {
+  pub fn new() -> ContainerBuilder {
+    ContainerBuilder {
+      items: vec![],
+      position: Position{ x: 0, y: 0 },
+      name: None
+    }
+  }
+
+  pub fn with_item(self, ent: Entity, offset: (i32, i32)) -> ContainerBuilder {
+    let mut c = self;
+    c
+      .items
+      .push((ent, offset));
+    c
+  }
+
+  pub fn build(self, ui: &UI) -> Entity {
+    let (entities, lazy): (Entities, Read<LazyUpdate>) =
+      ui
+      .world
+      .system_data();
+
+    let ent =
+      lazy
+      .create_entity(&entities)
+      .with(self.position)
+      .with(
+        Container{
+          items:
+          self
+            .items
+            .clone()
+            .into_iter()
+            .map(|(child, _)| child)
+            .collect()
+        }
+      )
+      .build();
+
+    self
+      .name
+      .map(|name| {
+        lazy
+          .insert(ent, name)
+      });
+
+    self
+      .items
+      .iter()
+      .for_each(|(child, offset)| {
+        lazy
+          .insert(
+            *child,
+            ContainerItem {
+              parent: ent,
+              offset: *offset
+            }
+          )
+      });
+
+    ent
+  }
+}
+
+
+pub struct PictureBuilder {
+  picture: Picture,
+  position: Position,
+  name: Option<Name>
+}
+
+
+impl PictureBuilder {
+  pub fn new() -> PictureBuilder {
+    PictureBuilder {
+      picture: Picture::new(),
+      position: Position{ x: 0, y: 0 },
+      name: None
+    }
+  }
+
+  pub fn picture(self, pic: Picture) -> Self {
+    let mut pb = self;
+    pb.picture = pic;
+    pb
+  }
+
+  pub fn set_color(self, r: u8, g: u8, b: u8, a:u8) -> PictureBuilder {
+    let mut pb = self;
+    pb
+      .picture
+      .0
+      .push(PictureCmd::SetColor(r,g,b,a));
+    pb
+  }
+
+  pub fn fill_rect(self, x: u32, y: u32, width: u32, height: u32) -> PictureBuilder {
+    let mut pb = self;
+    pb
+      .picture
+      .0
+      .push(PictureCmd::FillRect(x,y,width,height));
+    pb
+  }
+
+  pub fn position(self, x: i32, y: i32) -> Self {
+    let mut pb = self;
+    pb.position = Position{ x, y };
+    pb
+  }
+
+  pub fn build(self, ui: &UI) -> Entity {
+    let (entities, lazy): (Entities, Read<LazyUpdate>) =
+      ui
+      .world
+      .system_data();
+
+    let ent =
+      lazy
+      .create_entity(&entities)
+      .with(self.position)
+      .with(self.picture)
+      .build();
+
+    self
+      .name
+      .map(|name| {
+        lazy
+          .insert(ent, name)
       });
 
     ent

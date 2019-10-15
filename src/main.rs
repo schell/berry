@@ -16,8 +16,10 @@ use specs::prelude::{Dispatcher, DispatcherBuilder, World, WorldExt};
 
 pub mod components;
 pub mod systems;
+pub mod picture;
 
 use systems::drawing::*;
+use systems::layout::*;
 use components::*;
 
 
@@ -72,8 +74,7 @@ pub fn new_contexts(
   let ctx =
     sdl2::init()
     .expect("Could not create sdl2 context.");
-  lsudo apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
-et vsys =
+  let vsys =
     ctx
     .video()
     .expect("Could not init video system.");
@@ -221,6 +222,21 @@ pub fn mk_update(event: &Event) -> Option<Update> {
   }
 }
 
+pub struct WindowSize {
+  pub width: u32,
+  pub height: u32
+}
+
+
+impl Default for WindowSize {
+  fn default() -> WindowSize {
+    WindowSize {
+      width: 0,
+      height: 0
+    }
+  }
+}
+
 
 pub struct UI<'a, 'b> {
   world: World,
@@ -228,15 +244,32 @@ pub struct UI<'a, 'b> {
 }
 
 
+pub fn dispatcher_sdl2<'a, 'b>(
+  canvas: &'b mut WindowCanvas,
+  tex_creator: &'b TextureCreator<WindowContext>,
+  ttf: &'b Sdl2TtfContext
+) -> Dispatcher<'a, 'b> {
+  DispatcherBuilder::new()
+    .with_thread_local(DrawingSystem::new(
+      canvas,
+      tex_creator,
+      ttf
+    ))
+    .with_thread_local(LayoutSystem::new())
+    .build()
+}
+
+
 impl<'a, 'b> UI<'a, 'b> {
-  pub fn new<'c, 'd>(builder: DispatcherBuilder<'c, 'd>) -> UI<'c, 'd>{
+  pub fn new<'c, 'd>(dispatcher: Dispatcher<'c, 'd>) -> UI<'c, 'd> {
     let mut world
       = World::new();
+
     let mut dispatcher =
-      builder
-      .build();
+      dispatcher;
     dispatcher
       .setup(&mut world);
+
     UI {
       world,
       dispatcher
@@ -259,43 +292,34 @@ fn main() {
     new_contexts("berry playground", (800, 600));
 
   let mut ui =
-    UI::new(
-      DispatcherBuilder::new()
-        .with_thread_local(DrawingSystem::new(
-          &mut canvas,
-          &tex_creator,
-          &ttf
-        ))
-    );
+    UI::new(dispatcher_sdl2(&mut canvas, &tex_creator, &ttf));
 
-  let _label =
-    Label::new()
-    .text(
-      Text::new()
-        .text("Hello World!")
+  let label =
+    TextBuilder::new()
+    .text("Hello World!")
+    .build(&ui);
+
+  let pic =
+    PictureBuilder::new()
+    .set_color(255, 255, 0, 255)
+    .fill_rect(0, 0, 100, 100)
+    .set_color(255, 0, 255, 255)
+    .fill_rect(50, 50, 100, 100)
+    .build(&ui);
+
+  let layout =
+    Layout::relate(
+      (label, pic),
+      |(label_elem, pic_elem)| {
+        label_elm.right |EQ(STRONG)| pic_elem.left
+      }
     )
     .build(&ui);
 
-//  let mut button:Button =
-//    Button::new()
-//    .text("Press me!");
-//
-//  let button_width =
-//    button
-//    .get_size(&mut ui.canvas)
-//    .0;
+  // initialize the UI once before looping
+  ui
+    .maintain();
 
-//  let mut clicks = 0;
-//
-//  let mut label:Label =
-//    Label::new(
-//      &komika,
-//      &ui.tex_creator
-//    )
-//    .text("Hello")
-//    .color(Color::RGB(255, 255, 255))
-//    .position((button_width as i32 + 4, 0));
-//
   let mut event_pump =
     sdl
     .event_pump()

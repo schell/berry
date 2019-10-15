@@ -7,6 +7,8 @@ use specs::prelude::*;
 use std::collections::HashMap;
 
 use super::super::components::*;
+use super::super::picture::*;
+use super::super::WindowSize;
 
 mod text;
 
@@ -14,13 +16,16 @@ type FontMap<'ctx> = HashMap<(String, u16), Font<'ctx, 'static>>;
 
 type TextCache<'ctx> = HashMap<Text, Texture<'ctx>>;
 
-type WidgetCache<'ctx> = HashMap<u32, Texture<'ctx>>;
+type PictureCache<'ctx> = HashMap<Picture, Texture<'ctx>>;
 
 
+/// This system is responsible for
+/// * rasterizing our graphics primitives and displaying them on the screen
+/// * updating the window size for downstream systems
 pub struct DrawingSystem<'ctx> {
   fonts: FontMap<'ctx>,
   text_cache: TextCache<'ctx>,
-  widget_cache: WidgetCache<'ctx>,
+  picture_cache: PictureCache<'ctx>,
   canvas: Option<&'ctx mut WindowCanvas>,
   tex_creator: Option<&'ctx TextureCreator<WindowContext>>,
   ttf: Option<&'ctx Sdl2TtfContext>
@@ -36,7 +41,7 @@ impl<'ctx> DrawingSystem<'ctx> {
     DrawingSystem {
       fonts: HashMap::new(),
       text_cache: HashMap::new(),
-      widget_cache: HashMap::new(),
+      picture_cache: HashMap::new(),
       canvas: Some(canvas),
       tex_creator: Some(tex_creator),
       ttf: Some(ttf)
@@ -46,25 +51,25 @@ impl<'ctx> DrawingSystem<'ctx> {
 
 
 impl<'ctx> DrawingSystem<'ctx> {
-  fn size_for_widget(&self, texts: &ReadStorage<Text>, ent: &Entity, wtype: &WidgetType) -> (u32, u32) {
-    match wtype {
-      WidgetType::Label => {
-        // it's just the size of its text
-        let text =
-          texts
-          .get(*ent)
-          .expect("Label does not have text");
-        let tex =
-          self
-          .text_cache
-          .get(text)
-          .expect("Label's text has not been cached!");
-        let TextureQuery{ width, height, ..} =
-          tex
-          .query();
-        (width, height)
-      }
-    }
+  fn rasterize_picture(picture: &Picture, canvas: &mut WindowCanvas) {
+    picture
+      .0
+      .iter()
+      .for_each(|cmd| {
+        match *cmd {
+          PictureCmd::SetColor(r,g,b,a) => {
+            canvas
+              .set_draw_color(pixels::Color::RGBA(r,g,b,a));
+          }
+          PictureCmd::FillRect(x,y,w,h) => {
+            canvas
+              .fill_rect(Some(
+                Rect::new(x as i32, y as i32, w, h)
+              ))
+              .unwrap();
+          }
+        }
+      });
   }
 }
 
@@ -72,20 +77,38 @@ impl<'ctx> DrawingSystem<'ctx> {
 impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
   type SystemData = (
     Entities<'a>,
+    ReadStorage<'a, Picture>,
     ReadStorage<'a, Position>,
-    WriteStorage<'a, Size>,
     ReadStorage<'a, Text>,
-    ReadStorage<'a, WidgetType>,
+    Write<'a, WindowSize>
   );
 
-  fn run(&mut self, (entities, positions, mut sizes, texts, wtypes): Self::SystemData) {
+  fn run(
+    &mut self,
+    (entities, pictures, positions, texts, mut window_size): Self::SystemData
+  ) {
     let tex_creator =
       self
       .tex_creator
       .take()
       .expect("DrawingSystem does not have a TextureCreator.");
+    let canvas =
+      self
+      .canvas
+      .take()
+      .expect("DrawingSystem does not have a WindowCanvas");
 
-    // First run through everything that has text and texturize it
+    // Update the window size
+    let (ww, wh) =
+      canvas
+      .logical_size();
+    *window_size =
+      WindowSize {
+        width: ww,
+        height: wh
+      };
+
+    // First run through all texts and texturize them
     for text in (&texts).join() {
       let has_texture =
         self
@@ -142,101 +165,87 @@ impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
       }
     }
 
-    // Now start drawing the screen
-    let canvas =
-      self
-      .canvas
-      .take()
-      .expect("DrawingSystem does not have a WindowCanvas");
-
-    canvas
-      .set_draw_color(pixels::Color::RGB(128, 128, 128));
-    canvas
-      .clear();
-
-    // Run through each widget and cache if need be
-    for (ent, wtype) in (&entities, &wtypes).join() {
-      let is_cached =
+    // Then run through all our raster graphics
+    for picture in (&pictures).join() {
+      let has_picture =
         self
-        .widget_cache
-        .contains_key(&ent.id());
-      // Get the size of the widget and make sure it's stored
-      let (w, h) =
-        self
-        .size_for_widget(&texts, &ent, wtype);
-      sizes
-        .insert(
-          ent,
-          Size{
-            width: w,
-            height: h
-          }
-        )
-        .unwrap();
-      if !is_cached {
-        println!("Cacheing widget {:?} {:?}", ent, wtype);
+        .picture_cache
+        .contains_key(&picture);
+
+      if !has_picture {
+        let (w, h) =
+          picture
+          .size();
         let mut tex =
           tex_creator
           .create_texture(
             None,
             TextureAccess::Target,
-            w,
-            h
+            w, h
           )
-          .expect("Could not create texture cache for widget");
+          .expect("Could not create texture cache for picture");
         tex
           .set_blend_mode(BlendMode::Blend);
-        match wtype {
-          WidgetType::Label => {
-            let text =
-              texts
-              .get(ent)
-              .expect("Label does not have a Text");
-            let label_tex =
-              self
-              .text_cache
-              .get(text)
-              .expect("Label text is not cached.");
+        canvas
+          .with_texture_canvas(&mut tex, |sub_canvas| {
+            Self::rasterize_picture(&picture, sub_canvas);
+          })
+          .unwrap();
 
-            canvas
-              .with_texture_canvas(&mut tex, |sub_canvas| {
-                sub_canvas
-                  .copy(
-                    &label_tex,
-                    None,
-                    None
-                  )
-                  .unwrap();
-              })
-              .unwrap();
-          }
-        }
         self
-          .widget_cache
-          .insert(ent.id(), tex);
+          .picture_cache
+          .insert(picture.clone(), tex);
       }
     }
 
+    // Now start drawing the screen
+    canvas
+      .set_draw_color(pixels::Color::RGB(128, 128, 128));
+    canvas
+      .clear();
+
     // Run through each entity with a position and render it to the screen
     for (ent, position) in (&entities, &positions).join() {
-      let cached_tex =
-        self
-        .widget_cache
-        .get(&ent.id())
-        .expect("Widget has not been cached!");
-      let TextureQuery{ width, height, ..} =
-        cached_tex
-        .query();
-      canvas
-        .copy(
-          &cached_tex,
-          None,
-          Some(Rect::new(
-            position.x, position.y,
-            width, height
-          ))
-        )
-        .unwrap();
+      let mut draw_tex = |tex: &Texture| {
+        let TextureQuery{ width, height, ..} =
+          tex
+          .query();
+        canvas
+          .copy(
+            tex,
+            None,
+            Some(Rect::new(
+              position.x, position.y,
+              width, height
+            ))
+          )
+          .unwrap();
+
+      };
+
+      // If this thing is a piece of text, draw that
+      texts
+        .get(ent)
+        .map(|text| {
+          let tex =
+            self
+            .text_cache
+            .get(text)
+            .expect("Text was not cached! This should be impossible");
+          draw_tex(tex);
+        });
+
+      // If this thing is a rasterized picture, draw that
+      pictures
+        .get(ent)
+        .map(|pic| {
+          let tex =
+            self
+            .picture_cache
+            .get(pic)
+            .expect("Picture was not cached! This should be impossible");
+          draw_tex(tex);
+        });
     }
 
     canvas
