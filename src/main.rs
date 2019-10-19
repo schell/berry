@@ -294,29 +294,32 @@ fn main() {
   let mut ui =
     UI::new(dispatcher_sdl2(&mut canvas, &tex_creator, &ttf));
 
-  let label =
-    TextBuilder::new()
-    .text("Hello World!")
-    .build(&ui);
-
   let pic =
-    PictureBuilder::new()
-    .set_color(255, 255, 0, 255)
-    .fill_rect(0, 0, 100, 100)
-    .set_color(255, 0, 255, 255)
-    .fill_rect(50, 50, 100, 100)
-    .build(&ui);
-
-  let layout =
-    Layout::relate(
-      (label, pic),
-      |(label_elem, pic_elem)| {
-        label_elm.right |EQ(STRONG)| pic_elem.left
-      }
+    EntityBuilder::new()
+    .name("pic")
+    .picture(
+      vec![
+        picture::set_color(255, 255, 0, 255),
+        picture::fill_rect(0, 0, 100, 100),
+        picture::set_color(255, 0, 255, 255),
+        picture::fill_rect(50, 50, 100, 100),
+      ]
     )
+    .left(100)
+    .top(100)
+    .width(300)
+    .height(150)
     .build(&ui);
 
-  // initialize the UI once before looping
+  let _label =
+    EntityBuilder::new()
+    .name("label")
+    .text("<- Look at this thing to the left!")
+    .color(0, 0, 0, 255)
+    .left(pic.right())
+    .top(200)
+    .build(&ui);
+
   ui
     .maintain();
 
@@ -338,32 +341,5 @@ fn main() {
 
     ui
       .maintain();
-    //ui
-    //  .draw(&label, &mut fonts, &mut cache)
-//
-//    may_update
-//      .map(|update| {
-//        match update {
-//          Update::Mouse(mouse_update) => {
-//            button
-//              .update(mouse_update, &mut ui.canvas)
-//              .map(|new_state: ButtonState| {
-//                println!("{:?}", new_state);
-//                match new_state {
-//                  ButtonState::Down => {
-//                    clicks += 1;
-//                    label
-//                      .set_text(format!("{} clicks", clicks).as_str());
-//                  }
-//                  _ => {}
-//                }
-//              });
-//          }
-//        }
-//      });
-//    button
-//      .draw(&mut ui.canvas);
-//
-//    ui.canvas.present();
   }
 }

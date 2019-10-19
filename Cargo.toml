@@ -7,7 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cassowary = "^0.3.0"
+#cassowary = {git = "https://github.com/schell/cassowary-rs.git", rev = "abff0cc9588f623e74af58c48bbad954f990884e"}
+cassowary = { path = "../cassowary-rs/cassowary-rs" }
 specs = "0.15.1"
 specs-derive = "0.4.0"
 

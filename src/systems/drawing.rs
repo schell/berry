@@ -77,15 +77,16 @@ impl<'ctx> DrawingSystem<'ctx> {
 impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
   type SystemData = (
     Entities<'a>,
+    ReadStorage<'a, ElementBox>,
+    ReadStorage<'a, Name>,
     ReadStorage<'a, Picture>,
-    ReadStorage<'a, Position>,
     ReadStorage<'a, Text>,
     Write<'a, WindowSize>
   );
 
   fn run(
     &mut self,
-    (entities, pictures, positions, texts, mut window_size): Self::SystemData
+    (entities, element_boxes, names, pictures, texts, mut window_size): Self::SystemData
   ) {
     let tex_creator =
       self
@@ -204,23 +205,55 @@ impl<'a, 'ctx> System<'a> for DrawingSystem<'ctx> {
     canvas
       .clear();
 
-    // Run through each entity with a position and render it to the screen
-    for (ent, position) in (&entities, &positions).join() {
+    // Run through each entity and render it to the screen
+    for ent in (&entities).join() {
       let mut draw_tex = |tex: &Texture| {
-        let TextureQuery{ width, height, ..} =
+        let may_name =
+          names
+          .get(ent);
+        let may_el =
+          element_boxes
+          .get(ent);
+        let x =
+          may_el
+          .map(|el| el.x)
+          .unwrap_or(0);
+        let y =
+          may_el
+          .map(|el| el.y)
+          .unwrap_or(0);
+        let TextureQuery{ width: tw, height: th, ..} =
           tex
           .query();
+        let w =
+          may_el
+          .map(|el| el.w)
+          .unwrap_or(0);
+        let w =
+          if w == 0 {
+            tw
+          } else {
+            w
+          };
+        assert!(w != 0, format!("width of {:?} = {:?}", may_name, w));
+        let h =
+          may_el
+          .map(|el| el.h)
+          .unwrap_or(0);
+        let h =
+          if h == 0 {
+            th
+          } else {
+            h
+          };
+        assert!(h != 0, format!("height of {:?} = {:?}", may_name, h));
         canvas
           .copy(
             tex,
             None,
-            Some(Rect::new(
-              position.x, position.y,
-              width, height
-            ))
+            Some(Rect::new(x,y,w,h))
           )
           .unwrap();
-
       };
 
       // If this thing is a piece of text, draw that
