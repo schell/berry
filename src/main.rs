@@ -4,43 +4,26 @@ extern crate specs;
 extern crate specs_derive;
 
 use sdl2::Sdl;
+use sdl2::video::WindowContext;
+use sdl2::ttf::Sdl2TtfContext;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use sdl2::render::{BlendMode, TextureCreator, WindowCanvas};
-use sdl2::ttf::Sdl2TtfContext;
-use sdl2::video::WindowContext;
 
-use specs::prelude::{Dispatcher, DispatcherBuilder, World, WorldExt};
 
 pub mod components;
 pub mod systems;
 pub mod picture;
+pub mod resources;
+pub mod ui;
+pub mod drawing;
 
-use systems::drawing::*;
-use systems::layout::*;
 use components::*;
-
-
-//pub struct UI {
-//  pub sdl: Sdl,
-//  pub canvas: WindowCanvas,
-//  pub tex_creator: TextureCreator<WindowContext>,
-//  pub ttf: Sdl2TtfContext,
-//  may_event_pump: Option<EventPump>
-//}
-
-
-
-
-//pub trait Widget {
-//  fn draw<'ctx>(
-//    &self,
-//    ui: &'ctx mut UI,
-//    fonts: &'ctx mut FontMap<'ctx>
-//  ) -> (Texture<'ctx>, u32, u32);
-//}
+use resources::*;
+use ui::*;
+use picture::Picture;
 
 
 /// Used to update the button from whatever owns the button.
@@ -237,91 +220,98 @@ impl Default for WindowSize {
   }
 }
 
-
-pub struct UI<'a, 'b> {
-  world: World,
-  dispatcher: Dispatcher<'a, 'b>
-}
-
-
-pub fn dispatcher_sdl2<'a, 'b>(
-  canvas: &'b mut WindowCanvas,
-  tex_creator: &'b TextureCreator<WindowContext>,
-  ttf: &'b Sdl2TtfContext
-) -> Dispatcher<'a, 'b> {
-  DispatcherBuilder::new()
-    .with_thread_local(DrawingSystem::new(
-      canvas,
-      tex_creator,
-      ttf
-    ))
-    .with_thread_local(LayoutSystem::new())
-    .build()
-}
-
-
-impl<'a, 'b> UI<'a, 'b> {
-  pub fn new<'c, 'd>(dispatcher: Dispatcher<'c, 'd>) -> UI<'c, 'd> {
-    let mut world
-      = World::new();
-
-    let mut dispatcher =
-      dispatcher;
-    dispatcher
-      .setup(&mut world);
-
-    UI {
-      world,
-      dispatcher
-    }
-  }
-
-  pub fn maintain(&mut self) {
-    self
-      .dispatcher
-      .dispatch(&mut self.world);
-    self
-      .world
-      .maintain()
-  }
-}
-
-
 fn main() {
   let (sdl, mut canvas, tex_creator, ttf) =
     new_contexts("berry playground", (800, 600));
 
-  let mut ui =
-    UI::new(dispatcher_sdl2(&mut canvas, &tex_creator, &ttf));
+  let mut resources =
+    Resources::new(&mut canvas, &tex_creator, &ttf);
+
+  let mut ui = UI::new();
+
+  let pic_def =
+    Picture::new()
+    .set_color(255, 255, 0, 255)
+    .fill_rect(0, 0, 100, 100)
+    .set_color(255, 0, 255, 255)
+    .fill_rect(50, 50, 100, 100);
+
+  let (_, pw, ph) =
+    resources
+    .get_picture(&pic_def);
 
   let pic =
     EntityBuilder::new()
     .name("pic")
-    .picture(
-      vec![
-        picture::set_color(255, 255, 0, 255),
-        picture::fill_rect(0, 0, 100, 100),
-        picture::set_color(255, 0, 255, 255),
-        picture::fill_rect(50, 50, 100, 100),
-      ]
-    )
+    .picture(&pic_def)
     .left(100)
     .top(100)
-    .width(300)
-    .height(150)
-    .build(&ui);
+    .width(pw)
+    .height(ph)
+    .build(&mut ui);
 
-  let _label =
+  assert!(ui.get::<Name>(pic).is_some());
+
+  let text_def =
+    Text::new("<- Look at this thing to the left!")
+    .color(0, 0, 0, 255);
+
+  let (_, lw, lh) =
+    resources
+    .get_text(&text_def);
+
+  let label =
     EntityBuilder::new()
     .name("label")
-    .text("<- Look at this thing to the left!")
-    .color(0, 0, 0, 255)
+    .text(&text_def)
     .left(pic.right())
-    .top(200)
-    .build(&ui);
+    .top(pic.bottom() - 10.0)
+    .width(lw)
+    .height(lh)
+    .build(&mut ui);
 
-  ui
-    .maintain();
+  ui.maintain(&mut resources);
+
+  let pic_pos =
+    ui
+    .get_position(pic)
+    .expect("pic has no position");
+  assert_eq!(100, pic_pos.0, "pic.x is not 100");
+  assert_eq!(100, pic_pos.1, "pic.y is not 100");
+
+  let pic_size =
+    ui
+    .get_size(pic)
+    .unwrap();
+  assert_eq!(pw, pic_size.0, "pic.width is not 300");
+  assert_eq!(ph, pic_size.1, "pic.height is not 150");
+
+  let label_pos =
+    ui
+    .get_position(label)
+    .unwrap();
+  assert_eq!(pic_pos.0 + pic_size.0 as i32, label_pos.0, "label's left doesn't match pic's right");
+
+  let corner_square_pic =
+    Picture::new()
+    .set_color(0, 0, 0, 255)
+    .fill_rect(0, 0, 25, 25);
+
+  let _ =
+    resources
+    .get_picture(&corner_square_pic);
+
+  let _corner_square =
+    EntityBuilder::new()
+    .name("corner_square")
+    .picture(&corner_square_pic)
+    .width(25)
+    .height(25)
+    .right(ui.stage().right())
+    .bottom(ui.stage().bottom())
+    .build(&mut ui);
+
+  ui.maintain(&mut resources);
 
   let mut event_pump =
     sdl
@@ -340,6 +330,6 @@ fn main() {
     }
 
     ui
-      .maintain();
+      .maintain(&mut resources);
   }
 }

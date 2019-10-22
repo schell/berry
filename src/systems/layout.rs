@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use std::hash::Hash;
 pub use cassowary::*;
 use specs::prelude::*;
 
@@ -29,6 +31,60 @@ impl LayoutSystem {
       y_reader: None
     }
   }
+
+  fn run_solver<T, C, F>(
+    solver: &mut Solver<T>,
+    reader: &mut ReaderId<ComponentEvent>,
+
+    entities: &Entities,
+    constraints:&ReadStorage<C>,
+    to_constraints: F
+  ) -> Vec<(T, f64)>
+  where
+    T: Clone + Debug + Eq + Hash,
+    C: Component,
+    <C as Component>::Storage: Tracked,
+    F: Fn(&C) -> Vec<Constraint<T>>
+  {
+    constraints
+      .channel()
+      .read(reader)
+      .for_each(|event| {
+        match event {
+          ComponentEvent::Inserted(id) => {
+            let ent =
+              entities
+              .entity(*id);
+            let new_constraints =
+              constraints
+              .get(ent)
+              .expect("Could not find inserted constraint");
+            let owned_constraints =
+              to_constraints(new_constraints);
+            solver
+              .add_constraints(owned_constraints)
+              .expect("Could not add new constraints");
+          }
+          ComponentEvent::Modified(_id) => {
+            // TODO: How does one find the previous constraints?
+            panic!("No support for modifying constraints")
+
+          }
+          ComponentEvent::Removed(id) => {
+            let _ent =
+              entities
+              .entity(*id);
+            // TODO: Filter any constraints that contain a variable of id
+            panic!("No support for removing constraints")
+          }
+        }
+      });
+
+    // Fetch changes from the solver
+    solver
+      .fetch_changes()
+      .to_vec()
+  }
 }
 
 
@@ -59,11 +115,11 @@ impl<'a> System<'a> for LayoutSystem {
   fn run(
     &mut self,
     (entities,
-     _window_size,
+     window_size,
      constraints_x,
-     _constraints_y,
+     constraints_y,
      mut element_boxes,
-     names,
+     _names,
     ): Self::SystemData
   ) {
 
@@ -72,112 +128,133 @@ impl<'a> System<'a> for LayoutSystem {
       .solver_x
       .take()
       .unwrap_or({
-        // The first time a solver is created it must get all the constraints
         let mut solver =
           Solver::new();
-        let constraints:Vec<Constraint<VariableX>> =
-          (&constraints_x)
-          .join()
-          .flat_map(|ConstraintsX(cs)| cs.clone())
-          .collect();
         solver
-          .add_constraints(constraints)
-          .expect("Could not add initial x constraints to solver");
+          .add_constraint(VariableX::Left(None).is(0))
+          .expect("Could not add window left is 0 constraint");
+        // Add the window width variable
+        solver
+          .add_edit_variable(VariableX::Width(None), strength::STRONG)
+          .expect("Could not add edit variable for window width");
         solver
       });
 
-    // Run through any new x constraint updates
-    let x_reader =
+    x_solver
+      .suggest_value(VariableX::Width(None), window_size.width as f64)
+      .expect("Could not suggest value for window width");
+
+    let mut x_reader =
       self
       .x_reader
       .as_mut()
       .expect("LayoutSystem has no x constraint update reader");
-    constraints_x
-      .channel()
-      .read(x_reader)
-      .for_each(|event| {
-        match event {
-          ComponentEvent::Inserted(id) => {
-            let ent =
-              entities
-              .entity(*id);
-            let new_constraints =
-              constraints_x
+
+    Self::run_solver(
+      &mut x_solver,
+      &mut x_reader,
+      &entities,
+      &constraints_x,
+      |ConstraintsX(cs)| cs.clone()
+    ) .into_iter()
+      .for_each(|(var, val): (VariableX, f64)| {
+        match var {
+          VariableX::Left(Some(ent)) => {
+            let mut el =
+              element_boxes
               .get(ent)
-              .expect("Could not find inserted constraint");
-            x_solver
-              .add_constraints(new_constraints.0.clone())
-              .expect("Could not add new constraints");
+              .cloned()
+              .unwrap_or(ElementBox::new());
+            el.x = val as i32;
+            element_boxes
+              .insert(ent, el)
+              .expect("Could not update element box");
           }
-          ComponentEvent::Modified(_id) => {
-            // TODO: How does one find the previous constraints?
-            panic!("No support for modifying constraints")
+          VariableX::Width(Some(ent)) => {
+            let mut el =
+              element_boxes
+              .get(ent)
+              .cloned()
+              .unwrap_or(ElementBox::new());
+            el.w = val as u32;
+            element_boxes
+              .insert(ent, el)
+              .expect("Could not update element box");
+          }
+          _ => {}
+        };
 
-          }
-          ComponentEvent::Removed(id) => {
-            let _ent =
-              entities
-              .entity(*id);
-            // TODO: Filter any constraints that contain a variable of id
-            panic!("No support for removing constraints")
-          }
-        }
+        //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
       });
 
-    // Fetch changes from the solver and apply them to the ECS
-    x_solver
-      .fetch_changes()
-      .into_iter()
-      .for_each(|(var, val): &(VariableX, f64)| {
-        let may_ent:Option<Entity> =
-          match var {
-            VariableX::Left(Some(ent)) => {
-              let mut el =
-                element_boxes
-                .get(*ent)
-                .cloned()
-                .unwrap_or(ElementBox::new());
-              el.x = *val as i32;
-              element_boxes
-                .insert(*ent, el)
-                .expect("Could not update element box");
-              Some(*ent)
-            }
-            VariableX::Width(Some(ent)) => {
-              let mut el =
-                element_boxes
-                .get(*ent)
-                .cloned()
-                .unwrap_or(ElementBox::new());
-              el.w = *val as u32;
-              element_boxes
-                .insert(*ent, el)
-                .expect("Could not update element box");
-              Some(*ent)
-            }
-            VariableX::Right(Some(ent)) => {
-              let mut el =
-                element_boxes
-                .get(*ent)
-                .cloned()
-                .unwrap_or(ElementBox::new());
-              el.x = *val as i32 - el.w as i32;
-              element_boxes
-                .insert(*ent, el)
-                .expect("Could not update element box");
-              Some(*ent)
-            }
-            _ => { None }
-          };
+    self.solver_x =
+      Some(x_solver);
 
-        let name =
-          may_ent
-          .map(|e| names.get(e))
-          .unwrap_or(None);
-        println!("layout: {:?} of {:?} is {:?}", var, name, val);
+    let mut y_solver =
+      self
+      .solver_y
+      .take()
+      .unwrap_or({
+        let mut solver =
+          Solver::new();
+        solver
+          .add_constraint(VariableY::Top(None).is(0))
+          .expect("Could not add window top is 0 constraint");
+        // Add the window height variable
+        solver
+          .add_edit_variable(VariableY::Height(None), strength::STRONG)
+          .expect("Could not add edit variable for window height");
+        solver
       });
 
-    // Save the x solver
-    self.solver_x = Some(x_solver);
+    y_solver
+      .suggest_value(VariableY::Height(None), window_size.height as f64)
+      .expect("Could not suggest value for window height");
+
+    let mut y_reader =
+      self
+      .y_reader
+      .as_mut()
+      .expect("LayoutSystem has no y constraint update reader");
+
+    Self::run_solver(
+      &mut y_solver,
+      &mut y_reader,
+      &entities,
+      &constraints_y,
+      |ConstraintsY(cs)| cs.clone()
+    ) .into_iter()
+      .for_each(|(var, val): (VariableY, f64)| {
+        match var {
+          VariableY::Top(Some(ent)) => {
+            let mut el =
+              element_boxes
+              .get(ent)
+              .cloned()
+              .unwrap_or(ElementBox::new());
+            el.y = val as i32;
+            element_boxes
+              .insert(ent, el)
+              .expect("Could not update element boy");
+          }
+          VariableY::Height(Some(ent)) => {
+            let mut el =
+              element_boxes
+              .get(ent)
+              .cloned()
+              .unwrap_or(ElementBox::new());
+            el.h = val as u32;
+            element_boxes
+              .insert(ent, el)
+              .expect("Could not update element boy");
+          }
+          _ => {}
+        };
+
+        //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
+      });
+
+    self.solver_y =
+      Some(y_solver);
   }
 }

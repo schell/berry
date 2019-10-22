@@ -9,16 +9,6 @@ pub enum PictureCmd {
 }
 
 
-pub fn set_color(r:u8, g:u8, b:u8, a:u8) -> PictureCmd {
-  PictureCmd::SetColor(r,g,b,a)
-}
-
-
-pub fn fill_rect(x: u32, y: u32, w:u32, h:u32) -> PictureCmd {
-  PictureCmd::FillRect(x,y,w,h)
-}
-
-
 /// A declarative way of drawing. A list of picture commands.
 ///
 ///```rust
@@ -50,5 +40,18 @@ impl Picture {
             _ => { (max_w, max_h) }
           }
         })
+  }
+
+  pub fn set_color(self, r:u8, g:u8, b:u8, a:u8) -> Self {
+    let mut s = self;
+    s.0.push(PictureCmd::SetColor(r,g,b,a));
+    s
+  }
+
+
+  pub fn fill_rect(self, x: u32, y: u32, w:u32, h:u32) -> Self  {
+    let mut s = self;
+    s.0.push(PictureCmd::FillRect(x,y,w,h));
+    s
   }
 }
