@@ -16,7 +16,10 @@ pub type TextCache<'ctx> = HashMap<Text, Texture<'ctx>>;
 pub type PictureCache<'ctx> = HashMap<Picture, Texture<'ctx>>;
 
 
-pub struct Resources<'ctx> {
+/// Rasterizes text and 2d pictures.
+/// The Rasterizer also manages font and texture resources.
+// TODO: Abstract Rasterizer into a trait.
+pub struct Rasterizer<'ctx> {
   pub fonts: FontMap<'ctx>,
   pub text_cache: TextCache<'ctx>,
   pub picture_cache: PictureCache<'ctx>,
@@ -26,13 +29,13 @@ pub struct Resources<'ctx> {
 }
 
 
-impl<'ctx> Resources<'ctx> {
+impl<'ctx> Rasterizer<'ctx> {
   pub fn new(
     canvas: &'ctx mut WindowCanvas,
     tex_creator: &'ctx TextureCreator<WindowContext>,
     ttf: &'ctx Sdl2TtfContext
-  ) -> Resources<'ctx> {
-    Resources {
+  ) -> Rasterizer<'ctx> {
+    Rasterizer {
       fonts: HashMap::new(),
       text_cache: HashMap::new(),
       picture_cache: HashMap::new(),
@@ -59,7 +62,7 @@ impl<'ctx> Resources<'ctx> {
     let mut texture =
       self
       .tex_creator
-      .expect("Resources does not have a tex_creator to rasterize text with")
+      .expect("Rasterizer does not have a tex_creator to rasterize text with")
       .create_texture_from_surface(&surface)
       .map_err(|e| e.to_string())
       .unwrap();
@@ -182,7 +185,7 @@ impl<'ctx> Resources<'ctx> {
       let mut tex =
         self
         .tex_creator
-        .expect("Resources does not have a tex_creator to rasterize a picture with")
+        .expect("Rasterizer does not have a tex_creator to rasterize a picture with")
         .create_texture(
           None,
           TextureAccess::Target,

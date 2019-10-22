@@ -16,12 +16,12 @@ use sdl2::render::{BlendMode, TextureCreator, WindowCanvas};
 pub mod components;
 pub mod systems;
 pub mod picture;
-pub mod resources;
+pub mod rasterizer;
 pub mod ui;
 pub mod drawing;
 
 use components::*;
-use resources::*;
+use rasterizer::*;
 use ui::*;
 use picture::Picture;
 
@@ -224,8 +224,8 @@ fn main() {
   let (sdl, mut canvas, tex_creator, ttf) =
     new_contexts("berry playground", (800, 600));
 
-  let mut resources =
-    Resources::new(&mut canvas, &tex_creator, &ttf);
+  let mut rasterizer =
+    Rasterizer::new(&mut canvas, &tex_creator, &ttf);
 
   let mut ui = UI::new();
 
@@ -237,7 +237,7 @@ fn main() {
     .fill_rect(50, 50, 100, 100);
 
   let (_, pw, ph) =
-    resources
+    rasterizer
     .get_picture(&pic_def);
 
   let pic =
@@ -257,7 +257,7 @@ fn main() {
     .color(0, 0, 0, 255);
 
   let (_, lw, lh) =
-    resources
+    rasterizer
     .get_text(&text_def);
 
   let label =
@@ -270,7 +270,7 @@ fn main() {
     .height(lh)
     .build(&mut ui);
 
-  ui.maintain(&mut resources);
+  ui.maintain(&mut rasterizer);
 
   let pic_pos =
     ui
@@ -298,7 +298,7 @@ fn main() {
     .fill_rect(0, 0, 25, 25);
 
   let _ =
-    resources
+    rasterizer
     .get_picture(&corner_square_pic);
 
   let _corner_square =
@@ -311,7 +311,7 @@ fn main() {
     .bottom(ui.stage().bottom())
     .build(&mut ui);
 
-  ui.maintain(&mut resources);
+  ui.maintain(&mut rasterizer);
 
   let mut event_pump =
     sdl
@@ -330,6 +330,6 @@ fn main() {
     }
 
     ui
-      .maintain(&mut resources);
+      .maintain(&mut rasterizer);
   }
 }

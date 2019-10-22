@@ -6,7 +6,7 @@ use specs::prelude::*;
 use super::*;
 use super::components::*;
 use super::picture::*;
-use super::resources::*;
+use super::rasterizer::*;
 
 
 pub type DrawingSystemData<'a> = (
@@ -20,11 +20,11 @@ pub type DrawingSystemData<'a> = (
 
 
 pub fn run_sdl2_drawing<'a, 'ctx>(
-  resources: &mut Resources<'ctx>,
+  rasterizer: &mut Rasterizer<'ctx>,
   (entities, element_boxes, names, pictures, texts, mut _window_size): DrawingSystemData<'a>
 ) {
   let canvas =
-    resources
+    rasterizer
     .canvas
     .take()
     .expect("Could not take resource's canvas for sdl2 drawing");
@@ -90,7 +90,7 @@ pub fn run_sdl2_drawing<'a, 'ctx>(
       .get(ent)
       .map(|text| {
         let tex =
-          resources
+          rasterizer
           .text_cache
           .get(text)
           .expect("Text was not cached! This should be impossible");
@@ -102,7 +102,7 @@ pub fn run_sdl2_drawing<'a, 'ctx>(
       .get(ent)
       .map(|pic| {
         let tex =
-          resources
+          rasterizer
           .picture_cache
           .get(pic)
           .expect("Picture was not cached! This should be impossible");
@@ -113,6 +113,6 @@ pub fn run_sdl2_drawing<'a, 'ctx>(
   canvas
     .present();
 
-  resources.canvas =
+  rasterizer.canvas =
     Some(canvas);
 }

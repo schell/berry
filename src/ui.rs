@@ -3,7 +3,7 @@ use specs::prelude::*;
 use super::WindowSize;
 use super::components::*;
 use super::systems::layout::LayoutSystem;
-use super::resources::Resources;
+use super::rasterizer::Rasterizer;
 use super::drawing::{DrawingSystemData, run_sdl2_drawing};
 
 
@@ -34,15 +34,15 @@ impl<'a, 'b> UI<'a, 'b> {
     }
   }
 
-  pub fn maintain(&mut self, resources: &mut Resources) {
+  pub fn maintain(&mut self, rasterizer: &mut Rasterizer) {
     // Update the size of the window so layout has something
     // to work with
     {
       let canvas =
-        resources
+        rasterizer
         .canvas
         .take()
-        .expect("UI resources has no canvas during maintain call");
+        .expect("UI rasterizer has no canvas during maintain call");
 
       let mut window_size:Write<WindowSize> =
         self
@@ -59,7 +59,7 @@ impl<'a, 'b> UI<'a, 'b> {
           height: wh
         };
 
-      resources.canvas =
+      rasterizer.canvas =
         Some(canvas);
     }
 
@@ -77,7 +77,7 @@ impl<'a, 'b> UI<'a, 'b> {
       .world
       .system_data();
 
-    run_sdl2_drawing(resources, data);
+    run_sdl2_drawing(rasterizer, data);
   }
 
   pub fn get_size(&self, ent: Entity) -> Option<(u32, u32)> {
