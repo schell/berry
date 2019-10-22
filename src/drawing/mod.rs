@@ -8,8 +8,6 @@ use super::components::*;
 use super::picture::*;
 use super::resources::*;
 
-pub mod text;
-
 
 pub type DrawingSystemData<'a> = (
   Entities<'a>,

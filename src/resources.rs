@@ -1,13 +1,12 @@
 use sdl2::video::WindowContext;
 use sdl2::ttf::{Font, Sdl2TtfContext};
-use sdl2::pixels;
+use sdl2::pixels::Color;
 use sdl2::rect;
 use sdl2::render::{BlendMode, Texture, TextureAccess, TextureCreator, TextureQuery, WindowCanvas};
 use std::collections::HashMap;
 
 use super::components::*;
 use super::picture::*;
-use super::drawing::text;
 
 
 pub type FontMap<'ctx> = HashMap<(String, u16), Font<'ctx, 'static>>;
@@ -42,6 +41,39 @@ impl<'ctx> Resources<'ctx> {
       ttf: Some(ttf)
     }
   }
+
+  /// Texturize a string of text in a font and color.
+  pub fn rasterize_text(
+    &self,
+    s: &str,
+    c: Color,
+    font: &Font,
+  ) -> (Texture<'ctx>, u32, u32) {
+    // Generate the texture and copy the text into it
+    let surface =
+      font
+      .render(s)
+      .blended(c)
+      .map_err(|e| e.to_string())
+      .unwrap();
+    let mut texture =
+      self
+      .tex_creator
+      .expect("Resources does not have a tex_creator to rasterize text with")
+      .create_texture_from_surface(&surface)
+      .map_err(|e| e.to_string())
+      .unwrap();
+    texture
+      .set_blend_mode(BlendMode::Blend);
+    texture
+      .set_alpha_mod(c.a);
+
+    let TextureQuery{ width, height, ..} =
+      texture
+      .query();
+    (texture, width, height)
+  }
+
 
   /// Get the given text as a rasterized texture and its width and height.
   /// If the given text's font has not yet been loaded it will be cached.
@@ -81,7 +113,7 @@ impl<'ctx> Resources<'ctx> {
           .expect("Impossible missing font.");
 
         let color =
-          pixels::Color::RGBA(
+          Color::RGBA(
             text.text_color.r,
             text.text_color.g,
             text.text_color.b,
@@ -89,13 +121,10 @@ impl<'ctx> Resources<'ctx> {
           );
 
         let (tex, _, _) =
-          text::cache(
+          self.rasterize_text(
             &text.text,
             color,
-            font,
-            self
-              .tex_creator
-              .expect("Resources does not have a tex_creator to rasterize text with")
+            font
           );
 
         self
@@ -121,7 +150,7 @@ impl<'ctx> Resources<'ctx> {
         match *cmd {
           PictureCmd::SetColor(r,g,b,a) => {
             canvas
-              .set_draw_color(pixels::Color::RGBA(r,g,b,a));
+              .set_draw_color(Color::RGBA(r,g,b,a));
           }
           PictureCmd::FillRect(x,y,w,h) => {
             canvas
