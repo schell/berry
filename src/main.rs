@@ -12,13 +12,13 @@ use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use sdl2::render::{BlendMode, TextureCreator, WindowCanvas};
 
+use cassowary::*;
 
 pub mod components;
 pub mod systems;
 pub mod picture;
 pub mod rasterizer;
 pub mod ui;
-pub mod drawing;
 
 use components::*;
 use rasterizer::*;
@@ -312,6 +312,48 @@ fn main() {
     .build(&mut ui);
 
   ui.maintain(&mut rasterizer);
+
+  let box1 =
+    EntityBuilder::new()
+    .name("box1")
+    .picture(
+      &Picture::new()
+        .set_color(255, 0, 0, 128)
+        .fill_rect(0, 0, 50, 100)
+    )
+    .build(&mut ui);
+
+  let box2 =
+    EntityBuilder::new()
+    .name("box1")
+    .picture(
+      &Picture::new()
+        .set_color(255, 0, 0, 128)
+        .fill_rect(0, 0, 50, 100)
+    )
+    .build(&mut ui);
+
+  let _box_relation =
+    EntityBuilder::new()
+    .x_constraints(
+      vec![
+        box1.left().is(0),
+        box2.right().is(
+          ui.stage().right()
+        ),
+        box2.left().is_ge(box1.left()),
+
+        box1.width().is(50.0).with_strength(strength::WEAK),
+        box2.width().is(100.0).with_strength(strength::WEAK)
+      ]
+    )
+    .y_constraints(
+      vec![
+        box1.height().is(100),
+        box2.height().is(100)
+      ]
+    )
+    .build(&mut ui);
 
   let mut event_pump =
     sdl

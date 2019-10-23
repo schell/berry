@@ -3,8 +3,7 @@ use specs::prelude::*;
 use super::WindowSize;
 use super::components::*;
 use super::systems::layout::LayoutSystem;
-use super::rasterizer::Rasterizer;
-use super::drawing::{DrawingSystemData, run_sdl2_drawing};
+use super::rasterizer::{Rasterizer, DrawingSystemData};
 
 
 pub struct UI<'a, 'b> {
@@ -23,7 +22,7 @@ impl<'a, 'b> UI<'a, 'b> {
 
     let mut dispatcher =
       DispatcherBuilder::new()
-      .with_thread_local(LayoutSystem::new())
+      .with(LayoutSystem::new(), "layout", &[])
       .build();
     dispatcher
       .setup(&mut world);
@@ -77,7 +76,8 @@ impl<'a, 'b> UI<'a, 'b> {
       .world
       .system_data();
 
-    run_sdl2_drawing(rasterizer, data);
+    rasterizer
+      .run_sdl2_drawing(data);
   }
 
   pub fn get_size(&self, ent: Entity) -> Option<(u32, u32)> {

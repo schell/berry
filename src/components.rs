@@ -97,6 +97,8 @@ pub struct EntityBuilder {
   text: Option<Text>,
   picture: Option<Picture>,
   name: Option<Name>,
+  x_constraints: Option<Vec<Constraint<VariableX>>>,
+  y_constraints: Option<Vec<Constraint<VariableY>>>,
 }
 
 
@@ -111,7 +113,9 @@ impl EntityBuilder {
       bottom: None,
       picture: None,
       text: None,
-      name: None
+      name: None,
+      x_constraints: None,
+      y_constraints: None
     }
   }
 
@@ -169,6 +173,18 @@ impl EntityBuilder {
     eb
   }
 
+  pub fn x_constraints(self, xs:Vec<Constraint<VariableX>>) -> Self {
+    let mut eb = self;
+    eb.x_constraints = Some(xs);
+    eb
+  }
+
+  pub fn y_constraints(self, ys:Vec<Constraint<VariableY>>) -> Self {
+    let mut eb = self;
+    eb.y_constraints = Some(ys);
+    eb
+  }
+
   fn build_with(
     self,
     (entities,
@@ -193,12 +209,18 @@ impl EntityBuilder {
         // We need a concrete relationship between left, width, and right
         Some(ent.right().is(ent.left() + ent.width()))
       ];
-    let xs:Vec<Constraint<VariableX>> =
+    let mut xs:Vec<Constraint<VariableX>> =
       may_xs
       .into_iter()
       .filter_map(|expx:Option<Constraint<VariableX>>| expx)
       .into_iter()
       .collect();
+    xs.extend(
+      self
+        .x_constraints
+        .unwrap_or(vec![])
+        .into_iter()
+    );
     constraints_x
       .insert(ent, ConstraintsX(xs))
       .expect("Could not insert x constraints in EntityBuilder::build");
@@ -211,12 +233,18 @@ impl EntityBuilder {
         // We need a concrete relationship between top, height, and bottom
         Some(ent.bottom().is(ent.top() + ent.height()))
       ];
-    let ys:Vec<Constraint<VariableY>> =
+    let mut ys:Vec<Constraint<VariableY>> =
       may_ys
       .into_iter()
       .filter_map(|eypy:Option<Constraint<VariableY>>| eypy)
       .into_iter()
       .collect();
+    ys.extend(
+      self
+        .y_constraints
+        .unwrap_or(vec![])
+        .into_iter()
+    );
     constraints_y
       .insert(ent, ConstraintsY(ys))
       .expect("Could not insert y constraints in EntityBuilder::build");

@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 #cassowary = {git = "https://github.com/schell/cassowary-rs.git", rev = "abff0cc9588f623e74af58c48bbad954f990884e"}
-cassowary = { path = "../cassowary-rs/cassowary-rs" }
+cassowary = { path = "../cassowary-rs" }
 specs = "0.15.1"
 specs-derive = "0.4.0"
 
