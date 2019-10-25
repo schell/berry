@@ -8,6 +8,7 @@ use specs::prelude::{
   VecStorage,
 };
 use std::ops::*;
+use std::any::Any;
 
 use super::Name;
 
@@ -72,18 +73,11 @@ impl VariableY {
 }
 
 
-pub struct ConstraintsX(pub Vec<Constraint<VariableX>>);
+#[derive(Clone)]
+pub struct Constraints<T>(pub Vec<Constraint<T>>);
 
 
-impl Component for ConstraintsX {
-  type Storage = FlaggedStorage<Self, VecStorage<Self>>;
-}
-
-
-pub struct ConstraintsY(pub Vec<Constraint<VariableY>>);
-
-
-impl Component for ConstraintsY {
+impl<T: Send + Sync + Any> Component for Constraints<T> {
   type Storage = FlaggedStorage<Self, VecStorage<Self>>;
 }
 

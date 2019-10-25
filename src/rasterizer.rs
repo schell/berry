@@ -236,16 +236,6 @@ impl<'ctx> Rasterizer<'ctx> {
     &mut self,
     (entities, element_boxes, names, pictures, texts, mut _window_size): DrawingSystemData<'a>
   ) {
-    // Run through pictures and rasterize them
-    (&pictures)
-      .join()
-      .for_each(|pic| { self.get_picture(pic); });
-
-    // Run through texts and rasterize them
-    (&texts)
-      .join()
-      .for_each(|text| { self.get_text(text); });
-
     let canvas =
       self
       .canvas
@@ -279,7 +269,7 @@ impl<'ctx> Rasterizer<'ctx> {
           .query();
         let w =
           may_el
-          .map(|el| el.w)
+          .map(|el| el.width)
           .unwrap_or(0);
         let w =
           if w == 0 {
@@ -290,7 +280,7 @@ impl<'ctx> Rasterizer<'ctx> {
         assert!(w != 0, format!("width of {:?} = {:?}", may_name, w));
         let h =
           may_el
-          .map(|el| el.h)
+          .map(|el| el.height)
           .unwrap_or(0);
         let h =
           if h == 0 {

@@ -121,7 +121,7 @@ pub fn new_contexts(
 //       .ok_or("This is impossible - I know this font is here".to_string())
 //   }
 //
-//   pub fn wait_event_timeout(&mut self, timeout: u32) -> Option<Update> {
+//   pub fn wait_event_timeout(&mut self, timeout: u32add more tests and ) -> Option<Update> {
 //     let mut event_pump =
 //       self
 //       .may_event_pump
@@ -205,6 +205,7 @@ pub fn mk_update(event: &Event) -> Option<Update> {
   }
 }
 
+
 pub struct WindowSize {
   pub width: u32,
   pub height: u32
@@ -220,6 +221,7 @@ impl Default for WindowSize {
   }
 }
 
+
 fn main() {
   let (sdl, mut canvas, tex_creator, ttf) =
     new_contexts("berry playground", (800, 600));
@@ -229,25 +231,21 @@ fn main() {
 
   let mut ui = UI::new();
 
-  let pic_def =
-    Picture::new()
-    .set_color(255, 255, 0, 255)
-    .fill_rect(0, 0, 100, 100)
-    .set_color(255, 0, 255, 255)
-    .fill_rect(50, 50, 100, 100);
-
-  let (_, pw, ph) =
-    rasterizer
-    .get_picture(&pic_def);
+;
 
   let pic =
     EntityBuilder::new()
     .name("pic")
-    .picture(&pic_def)
+    .picture(
+      &Picture::new()
+        .set_color(255, 255, 0, 255)
+        .fill_rect(0, 0, 100, 100)
+        .set_color(255, 0, 255, 255)
+        .fill_rect(50, 50, 100, 100)
+    )
     .left(100)
     .top(100)
-    .width(pw)
-    .height(ph)
+    .shrink_to_contents()
     .build(&mut ui);
 
   assert!(ui.get::<Name>(pic).is_some());
@@ -283,14 +281,15 @@ fn main() {
     ui
     .get_size(pic)
     .unwrap();
-  assert_eq!(pw, pic_size.0, "pic.width is not 300");
-  assert_eq!(ph, pic_size.1, "pic.height is not 150");
+  println!("pic_size: {:?}", pic_size);
+  assert_eq!(150, pic_size.0, "pic.width is not 150");
+  assert_eq!(150, pic_size.1, "pic.height is not 150");
 
-  let label_pos =
+  let _label_pos =
     ui
     .get_position(label)
     .unwrap();
-  assert_eq!(pic_pos.0 + pic_size.0 as i32, label_pos.0, "label's left doesn't match pic's right");
+  //assert_eq!(pic_pos.0 + pic_size.0 as i32, label_pos.0, "label's left doesn't match pic's right");
 
   let corner_square_pic =
     Picture::new()
@@ -325,10 +324,10 @@ fn main() {
 
   let box2 =
     EntityBuilder::new()
-    .name("box1")
+    .name("box2")
     .picture(
       &Picture::new()
-        .set_color(255, 0, 0, 128)
+        .set_color(0, 255, 0, 128)
         .fill_rect(0, 0, 50, 100)
     )
     .build(&mut ui);
@@ -339,9 +338,9 @@ fn main() {
       vec![
         box1.left().is(0),
         box2.right().is(
-          ui.stage().right()
+          ui.stage().right() - 10.0
         ),
-        box2.left().is_ge(box1.left()),
+        box2.left().is_ge(box1.right() + 10.0),
 
         box1.width().is(50.0).with_strength(strength::WEAK),
         box2.width().is(100.0).with_strength(strength::WEAK)

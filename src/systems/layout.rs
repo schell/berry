@@ -1,260 +1,355 @@
+pub use cassowary::*;
+
+use specs::prelude::*;
+
+use std::collections::HashMap;
+use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
-pub use cassowary::*;
-use specs::prelude::*;
 
 use super::super::WindowSize;
 use super::super::components::{
   ElementBox,
-  ConstraintsX,
-  ConstraintsY,
-  Name,
+  Constraints,
   VariableX,
-  VariableY
+  VariableY,
+  Name,
 };
 
 
-pub struct LayoutSystem {
-  solver_x: Option<Solver<VariableX>>,
-  solver_y: Option<Solver<VariableY>>,
-  x_reader: Option<ReaderId<ComponentEvent>>,
-  y_reader: Option<ReaderId<ComponentEvent>>
-}
+/// The SystemData for an IsLayoutSystem implementation.
+type LayoutSystemData<'a, T, R> = (
+  Entities<'a>,
+
+  Read<'a, R>,
+
+  ReadStorage<'a, Constraints<T>>,
+  WriteStorage<'a, ElementBox>,
+  ReadStorage<'a, Name>
+);
 
 
-impl LayoutSystem {
-  pub fn new() -> LayoutSystem {
-    LayoutSystem {
-      solver_x: None,
-      solver_y: None,
-      x_reader: None,
-      y_reader: None
-    }
+pub trait IsLayoutSystem<T, R>
+where
+  T: Any + Clone + Debug + Eq + Hash + Send + Sync,
+  R: Any + Default + Send + Sync
+{
+
+  fn solver_mut(&mut self) -> &mut Option<Solver<T>>;
+  fn reader_mut(&mut self) -> &mut Option<ReaderId<ComponentEvent>>;
+  fn cache_mut(&mut self) -> &mut HashMap<u32, Constraints<T>>;
+
+  fn initial_constraints(&self) -> Constraints<T>;
+  fn edit_variables(&self) -> Vec<T>;
+  fn get_edit_variable_value(&self, variable: &T, source: &Read<R>) -> f64;
+
+  fn update_variable_value(
+    &self,
+    element_boxes: &mut WriteStorage<ElementBox>,
+    names: &ReadStorage<Name>,
+    variable: T,
+    value: f64
+  );
+
+  fn setup(&mut self, world: &mut World) {
+    <LayoutSystemData<T, R> as SystemData>::setup(world);
+    let mut cs: WriteStorage<Constraints<T>> =
+      SystemData::fetch(world);
+    *self.reader_mut() =
+      Some(cs.register_reader());
   }
 
-  fn run_solver<T, C, F>(
-    solver: &mut Solver<T>,
-    reader: &mut ReaderId<ComponentEvent>,
+  fn run<'a>(
+    &mut self,
+    (entities,
+     edit_variable_values,
+     constraints,
+     mut element_boxes,
+     names,
+    ): LayoutSystemData<'a, T, R>
+  ) {
+    let mut solver =
+      self
+      .solver_mut()
+      .take()
+      .unwrap_or({
+        let mut solver =
+          Solver::new();
+        solver
+          .add_constraints(self.initial_constraints().0)
+          .expect("Could not add initial constraints");
 
-    entities: &Entities,
-    constraints:&ReadStorage<C>,
-    to_constraints: F
-  ) -> Vec<(T, f64)>
-  where
-    T: Clone + Debug + Eq + Hash,
-    C: Component,
-    <C as Component>::Storage: Tracked,
-    F: Fn(&C) -> Vec<Constraint<T>>
-  {
+        // Add the edit variables
+        self
+          .edit_variables()
+          .iter()
+          .for_each(|v| {
+            solver
+              .add_edit_variable(v.clone(), strength::STRONG)
+              .expect("Could not add edit variable");
+          });
+
+        solver
+      });
+
+    self
+      .edit_variables()
+      .iter()
+      .for_each(|e| {
+        let value =
+          self
+          .get_edit_variable_value(e, &edit_variable_values);
+        solver
+          .suggest_value(e.clone(), value)
+          .expect(&format!("Could not suggest value for edit variable {:?}", e));
+      });
+
+    let reader =
+      self
+      .reader_mut()
+      .as_mut()
+      .expect("LayoutSystem has no constraint update reader");
+
+    let insert = |id: u32, the_solver: &mut Solver<T>, cache: &mut HashMap<u32, Constraints<T>>| {
+      let ent =
+        entities
+        .entity(id);
+      let new_constraints =
+        constraints
+        .get(ent)
+        .expect("Could not find inserted constraint");
+      the_solver
+        .add_constraints(new_constraints.0.clone())
+        .expect("Could not add new constraints");
+      cache
+        .insert(id, new_constraints.clone());
+    };
+
+    let remove = |id: u32, the_solver: &mut Solver<T>, cache: &mut HashMap<u32, Constraints<T>>| {
+      cache
+        .remove(&id)
+        .expect("Could not remove constraints from cache")
+        .0
+        .into_iter()
+        .for_each(|c| {
+          the_solver
+            .remove_constraint(&c)
+            .expect("Could not remove constraint");
+        });
+    };
+
     constraints
       .channel()
       .read(reader)
       .for_each(|event| {
         match event {
           ComponentEvent::Inserted(id) => {
-            let ent =
-              entities
-              .entity(*id);
-            let new_constraints =
-              constraints
-              .get(ent)
-              .expect("Could not find inserted constraint");
-            let owned_constraints =
-              to_constraints(new_constraints);
-            solver
-              .add_constraints(owned_constraints)
-              .expect("Could not add new constraints");
+            insert(*id, &mut solver, self.cache_mut());
           }
-          ComponentEvent::Modified(_id) => {
-            // TODO: How does one find the previous constraints?
-            panic!("No support for modifying constraints")
-
+          ComponentEvent::Modified(id) => {
+            remove(*id, &mut solver, self.cache_mut());
+            insert(*id, &mut solver, self.cache_mut());
           }
           ComponentEvent::Removed(id) => {
-            let _ent =
-              entities
-              .entity(*id);
-            // TODO: Filter any constraints that contain a variable of id
-            panic!("No support for removing constraints")
+            remove(*id, &mut solver, self.cache_mut());
           }
         }
       });
 
-    // Fetch changes from the solver
+    // Fetch changes from the solver and input them into the ECS
     solver
       .fetch_changes()
-      .to_vec()
+      .into_iter()
+      .for_each(|(variable, value)| {
+        self.update_variable_value(&mut element_boxes, &names, variable.clone(), *value)
+      });
+
+    *self.solver_mut() =
+      Some(solver);
   }
 }
 
 
-impl<'a> System<'a> for LayoutSystem {
-  type SystemData = (
-    Entities<'a>,
+pub struct LayoutSystem<T>
+where
+  T: Any + Clone + Debug + Eq + Hash + Send + Sync,
+{
+  pub solver: Option<Solver<T>>,
+  pub reader: Option<ReaderId<ComponentEvent>>,
+  pub cache: HashMap<u32, Constraints<T>>
+}
 
-    Read<'a, WindowSize>,
 
-    ReadStorage<'a, ConstraintsX>,
-    ReadStorage<'a, ConstraintsY>,
-    WriteStorage<'a, ElementBox>,
-    ReadStorage<'a, Name>
-  );
+impl<T> LayoutSystem<T>
+where
+  T: Any + Clone + Debug + Eq + Hash + Send + Sync,
+{
+  pub fn new() -> LayoutSystem<T> {
+    LayoutSystem {
+      solver: None,
+      reader: None,
+      cache: HashMap::new()
+    }
+  }
+}
 
-  fn setup(&mut self, world: &mut World) {
-    Self::SystemData::setup(world);
-    let mut xs: WriteStorage<ConstraintsX> =
-      SystemData::fetch(world);
-    self.x_reader =
-      Some(xs.register_reader());
-    let mut ys: WriteStorage<ConstraintsY> =
-      SystemData::fetch(world);
-    self.y_reader =
-      Some(ys.register_reader());
+
+impl IsLayoutSystem<VariableX, WindowSize> for LayoutSystem<VariableX> {
+  fn solver_mut(&mut self) -> &mut Option<Solver<VariableX>> {
+    &mut self.solver
   }
 
-  fn run(
-    &mut self,
-    (entities,
-     window_size,
-     constraints_x,
-     constraints_y,
-     mut element_boxes,
-     _names,
-    ): Self::SystemData
+  fn reader_mut(&mut self) -> &mut Option<ReaderId<ComponentEvent>> {
+    &mut self.reader
+  }
+
+  fn cache_mut(&mut self) -> &mut HashMap<u32, Constraints<VariableX>> {
+    &mut self.cache
+  }
+
+  fn initial_constraints(&self) -> Constraints<VariableX> {
+    Constraints(vec![VariableX::Left(None).is(0)])
+  }
+
+  fn edit_variables(&self) -> Vec<VariableX> {
+    vec![VariableX::Width(None)]
+  }
+
+  fn get_edit_variable_value(&self, variable: &VariableX, window_size: &Read<WindowSize>) -> f64 {
+    match variable {
+      VariableX::Left(None) => { 0.0 }
+      VariableX::Width(None) => { window_size.width as f64 }
+      _ => { panic!("No support for using entities as edit variables") }
+    }
+  }
+
+  fn update_variable_value(
+    &self,
+    element_boxes: &mut WriteStorage<ElementBox>,
+    _names: &ReadStorage<Name>,
+    var: VariableX,
+    val: f64
   ) {
+    match var {
+      VariableX::Left(Some(ent)) => {
+        let mut el =
+          element_boxes
+          .get(ent)
+          .cloned()
+          .unwrap_or(ElementBox::new());
+        el.x = val as i32;
+        element_boxes
+          .insert(ent, el)
+          .expect("Could not update element box x");
+      }
+      VariableX::Width(Some(ent)) => {
+        let mut el =
+          element_boxes
+          .get(ent)
+          .cloned()
+          .unwrap_or(ElementBox::new());
+        if (val as u32) == 4294967196 {
+          panic!("wtf {:?}", val);
+        }
+        el.width = val as u32;
+        element_boxes
+          .insert(ent, el)
+          .expect("Could not update element box width");
+      }
+      _ => {}
+    };
+    //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
+  }
+}
 
-    let mut x_solver =
-      self
-      .solver_x
-      .take()
-      .unwrap_or({
-        let mut solver =
-          Solver::new();
-        solver
-          .add_constraint(VariableX::Left(None).is(0))
-          .expect("Could not add window left is 0 constraint");
-        // Add the window width variable
-        solver
-          .add_edit_variable(VariableX::Width(None), strength::STRONG)
-          .expect("Could not add edit variable for window width");
-        solver
-      });
 
-    x_solver
-      .suggest_value(VariableX::Width(None), window_size.width as f64)
-      .expect("Could not suggest value for window width");
+impl<'a> System<'a> for LayoutSystem<VariableX> {
+  type SystemData = LayoutSystemData<'a, VariableX, WindowSize>;
 
-    let mut x_reader =
-      self
-      .x_reader
-      .as_mut()
-      .expect("LayoutSystem has no x constraint update reader");
+  fn setup(&mut self, world: &mut World) {
+    (self as &mut IsLayoutSystem<VariableX, WindowSize>).setup(world)
+  }
 
-    Self::run_solver(
-      &mut x_solver,
-      &mut x_reader,
-      &entities,
-      &constraints_x,
-      |ConstraintsX(cs)| cs.clone()
-    ) .into_iter()
-      .for_each(|(var, val): (VariableX, f64)| {
-        match var {
-          VariableX::Left(Some(ent)) => {
-            let mut el =
-              element_boxes
-              .get(ent)
-              .cloned()
-              .unwrap_or(ElementBox::new());
-            el.x = val as i32;
-            element_boxes
-              .insert(ent, el)
-              .expect("Could not update element box");
-          }
-          VariableX::Width(Some(ent)) => {
-            let mut el =
-              element_boxes
-              .get(ent)
-              .cloned()
-              .unwrap_or(ElementBox::new());
-            el.w = val as u32;
-            element_boxes
-              .insert(ent, el)
-              .expect("Could not update element box");
-          }
-          _ => {}
-        };
+  fn run(&mut self, data: Self::SystemData) {
+    (self as &mut IsLayoutSystem<VariableX, WindowSize>).run(data);
+  }
+}
 
-        //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
-      });
 
-    self.solver_x =
-      Some(x_solver);
+impl IsLayoutSystem<VariableY, WindowSize> for LayoutSystem<VariableY> {
+  fn solver_mut(&mut self) -> &mut Option<Solver<VariableY>> {
+    &mut self.solver
+  }
 
-    let mut y_solver =
-      self
-      .solver_y
-      .take()
-      .unwrap_or({
-        let mut solver =
-          Solver::new();
-        solver
-          .add_constraint(VariableY::Top(None).is(0))
-          .expect("Could not add window top is 0 constraint");
-        // Add the window height variable
-        solver
-          .add_edit_variable(VariableY::Height(None), strength::STRONG)
-          .expect("Could not add edit variable for window height");
-        solver
-      });
+  fn reader_mut(&mut self) -> &mut Option<ReaderId<ComponentEvent>> {
+    &mut self.reader
+  }
 
-    y_solver
-      .suggest_value(VariableY::Height(None), window_size.height as f64)
-      .expect("Could not suggest value for window height");
+  fn cache_mut(&mut self) -> &mut HashMap<u32, Constraints<VariableY>> {
+    &mut self.cache
+  }
 
-    let mut y_reader =
-      self
-      .y_reader
-      .as_mut()
-      .expect("LayoutSystem has no y constraint update reader");
+  fn initial_constraints(&self) -> Constraints<VariableY> {
+    Constraints(vec![VariableY::Top(None).is(0)])
+  }
 
-    Self::run_solver(
-      &mut y_solver,
-      &mut y_reader,
-      &entities,
-      &constraints_y,
-      |ConstraintsY(cs)| cs.clone()
-    ) .into_iter()
-      .for_each(|(var, val): (VariableY, f64)| {
-        match var {
-          VariableY::Top(Some(ent)) => {
-            let mut el =
-              element_boxes
-              .get(ent)
-              .cloned()
-              .unwrap_or(ElementBox::new());
-            el.y = val as i32;
-            element_boxes
-              .insert(ent, el)
-              .expect("Could not update element boy");
-          }
-          VariableY::Height(Some(ent)) => {
-            let mut el =
-              element_boxes
-              .get(ent)
-              .cloned()
-              .unwrap_or(ElementBox::new());
-            el.h = val as u32;
-            element_boxes
-              .insert(ent, el)
-              .expect("Could not update element boy");
-          }
-          _ => {}
-        };
+  fn edit_variables(&self) -> Vec<VariableY> {
+    vec![VariableY::Height(None)]
+  }
 
-        //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
-      });
+  fn get_edit_variable_value(&self, variable: &VariableY, window_size: &Read<WindowSize>) -> f64 {
+    match variable {
+      VariableY::Top(None) => { 0.0 }
+      VariableY::Height(None) => { window_size.height as f64 }
+      _ => { panic!("No support for using entities as edit variables") }
+    }
+  }
 
-    self.solver_y =
-      Some(y_solver);
+  fn update_variable_value(
+    &self,
+    element_boyes: &mut WriteStorage<ElementBox>,
+    _names: &ReadStorage<Name>,
+    var: VariableY,
+    val: f64
+  ) {
+    match var {
+      VariableY::Top(Some(ent)) => {
+        let mut el =
+          element_boyes
+          .get(ent)
+          .cloned()
+          .unwrap_or(ElementBox::new());
+        el.y = val as i32;
+        element_boyes
+          .insert(ent, el)
+          .expect("Could not update element y");
+      }
+      VariableY::Height(Some(ent)) => {
+        let mut el =
+          element_boyes
+          .get(ent)
+          .cloned()
+          .unwrap_or(ElementBox::new());
+        el.height = val as u32;
+        element_boyes
+          .insert(ent, el)
+          .expect("Could not update element height");
+      }
+      _ => {}
+    };
+    //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
+  }
+}
+
+
+impl<'a> System<'a> for LayoutSystem<VariableY> {
+  type SystemData = LayoutSystemData<'a, VariableY, WindowSize>;
+
+  fn setup(&mut self, world: &mut World) {
+    (self as &mut IsLayoutSystem<VariableY, WindowSize>).setup(world)
+  }
+
+  fn run(&mut self, data: Self::SystemData) {
+    (self as &mut IsLayoutSystem<VariableY, WindowSize>).run(data);
   }
 }

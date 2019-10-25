@@ -13,6 +13,7 @@ mod constraints;
 pub use constraints::*;
 use super::UI;
 use super::picture::Picture;
+use super::systems::shrinkwrap::ShrinkwrapRequest;
 
 
 #[derive(Clone, Component, Debug, PartialEq)]
@@ -20,15 +21,15 @@ use super::picture::Picture;
 pub struct ElementBox {
   pub x: i32,
   pub y: i32,
-  pub w: u32,
-  pub h: u32,
+  pub width: u32,
+  pub height: u32,
 }
 
 
 impl ElementBox {
   pub fn new() -> ElementBox {
     ElementBox {
-      x: 0, y: 0, w: 0, h: 0
+      x: 0, y: 0, width: 0, height: 0
     }
   }
 }
@@ -77,11 +78,12 @@ pub struct Name(pub String);
 
 type EntityBuildData<'a> = (
   Entities<'a>,
-  WriteStorage<'a, ConstraintsX>,
-  WriteStorage<'a, ConstraintsY>,
+  WriteStorage<'a, Constraints<VariableX>>,
+  WriteStorage<'a, Constraints<VariableY>>,
   WriteStorage<'a, ElementBox>,
   WriteStorage<'a, Name>,
   WriteStorage<'a, Picture>,
+  WriteStorage<'a, ShrinkwrapRequest>,
   WriteStorage<'a, Text>
 );
 
@@ -99,6 +101,7 @@ pub struct EntityBuilder {
   name: Option<Name>,
   x_constraints: Option<Vec<Constraint<VariableX>>>,
   y_constraints: Option<Vec<Constraint<VariableY>>>,
+  shrinkwrap: bool
 }
 
 
@@ -115,8 +118,15 @@ impl EntityBuilder {
       text: None,
       name: None,
       x_constraints: None,
-      y_constraints: None
+      y_constraints: None,
+      shrinkwrap: false
     }
+  }
+
+  pub fn shrink_to_contents(self) -> Self {
+    let mut eb = self;
+    eb.shrinkwrap = true;
+    eb
   }
 
   pub fn name(self, n: &str) -> Self {
@@ -193,6 +203,7 @@ impl EntityBuilder {
      mut element_boxes,
      mut names,
      mut pictures,
+     mut shrinkwrap_reqs,
      mut texts
     ):EntityBuildData
   ) -> Entity {
@@ -222,7 +233,7 @@ impl EntityBuilder {
         .into_iter()
     );
     constraints_x
-      .insert(ent, ConstraintsX(xs))
+      .insert(ent, Constraints(xs))
       .expect("Could not insert x constraints in EntityBuilder::build");
 
     let may_ys:Vec<Option<Constraint<VariableY>>> =
@@ -236,7 +247,7 @@ impl EntityBuilder {
     let mut ys:Vec<Constraint<VariableY>> =
       may_ys
       .into_iter()
-      .filter_map(|eypy:Option<Constraint<VariableY>>| eypy)
+      .filter_map(|expy:Option<Constraint<VariableY>>| expy)
       .into_iter()
       .collect();
     ys.extend(
@@ -246,7 +257,7 @@ impl EntityBuilder {
         .into_iter()
     );
     constraints_y
-      .insert(ent, ConstraintsY(ys))
+      .insert(ent, Constraints(ys))
       .expect("Could not insert y constraints in EntityBuilder::build");
 
     self
@@ -264,6 +275,12 @@ impl EntityBuilder {
     element_boxes
       .insert(ent, ElementBox::new())
       .expect("Could not insert element box in EntityBuilder::build");
+
+    if self.shrinkwrap {
+      shrinkwrap_reqs
+        .insert(ent, ShrinkwrapRequest)
+        .expect("could not insert shrinkwrap request in EntityBuilder::build");
+    }
 
     ent
 

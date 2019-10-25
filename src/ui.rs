@@ -2,7 +2,8 @@ use specs::prelude::*;
 
 use super::WindowSize;
 use super::components::*;
-use super::systems::layout::LayoutSystem;
+use super::systems::layout::*;
+use super::systems::shrinkwrap::{ContentSize, ShrinkwrapSystem};
 use super::rasterizer::{Rasterizer, DrawingSystemData};
 
 
@@ -22,7 +23,9 @@ impl<'a, 'b> UI<'a, 'b> {
 
     let mut dispatcher =
       DispatcherBuilder::new()
-      .with(LayoutSystem::new(), "layout", &[])
+      .with(ShrinkwrapSystem, "shrinkwrap", &[])
+      .with(LayoutSystem::<VariableX>::new(), "layout_x", &[])
+      .with(LayoutSystem::<VariableY>::new(), "layout_y", &[])
       .build();
     dispatcher
       .setup(&mut world);
@@ -62,6 +65,57 @@ impl<'a, 'b> UI<'a, 'b> {
         Some(canvas);
     }
 
+    // Do these things so that we have entity's content before running
+    // systems.
+    {
+      let data:DrawingSystemData =
+        self
+        .world
+        .system_data();
+
+      let mut content_sizes: WriteStorage<ContentSize> =
+        self
+        .world
+        .system_data();
+
+      // Run through pictures and text and rasterize them, updating their
+      // entity's content size
+      (&data.0, &data.3)
+        .join()
+        .for_each(|(ent, pic)| {
+          let (_, w, h) =
+            rasterizer
+            .get_picture(pic);
+          let mut cs =
+            content_sizes
+            .get(ent)
+            .cloned()
+            .unwrap_or(ContentSize{width:0, height:0});
+          cs.width = u32::max(w, cs.width);
+          cs.height = u32::max(h, cs.height);
+          content_sizes
+            .insert(ent, cs)
+            .expect("Could not insert content size");
+        });
+      (&data.0, &data.4)
+        .join()
+        .for_each(|(ent, text)| {
+          let (_, w, h) =
+            rasterizer
+            .get_text(text);
+          let mut cs =
+            content_sizes
+            .get(ent)
+            .cloned()
+            .unwrap_or(ContentSize{width:0, height:0});
+          cs.width = u32::max(w, cs.width);
+          cs.height = u32::max(h, cs.height);
+          content_sizes
+            .insert(ent, cs)
+            .expect("Could not insert content size");
+        });
+    }
+
     self
       .dispatcher
       .dispatch(&mut self.world);
@@ -70,12 +124,12 @@ impl<'a, 'b> UI<'a, 'b> {
       .world
       .maintain();
 
-    // Draw the things
     let data:DrawingSystemData =
       self
       .world
       .system_data();
 
+    // Draw the things
     rasterizer
       .run_sdl2_drawing(data);
   }
@@ -88,7 +142,7 @@ impl<'a, 'b> UI<'a, 'b> {
     elements
       .get(ent)
       .map(|elbox| {
-        (elbox.w, elbox.h)
+        (elbox.width, elbox.height)
       })
   }
 
