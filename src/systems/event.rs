@@ -9,6 +9,9 @@ use super::super::components::*;
 pub struct Mouse {
   pub x: i32,
   pub y: i32,
+  pub left_btn_down: bool,
+  pub middle_btn_down: bool,
+  pub right_btn_down: bool
 }
 
 
@@ -16,7 +19,10 @@ impl Default for Mouse {
   fn default() -> Self {
     Mouse {
       x: 0,
-      y: 0
+      y: 0,
+      left_btn_down: false,
+      middle_btn_down: false,
+      right_btn_down: false
     }
   }
 }
@@ -26,7 +32,9 @@ impl Default for Mouse {
 pub enum Event {
   MouseOver,
   MouseMove,
-  MouseOut
+  MouseOut,
+  MouseDown,
+  MouseUp
 }
 
 
@@ -57,7 +65,6 @@ impl EventSystem {
     ent: Entity,
     element_box: &ElementBox,
     mouse: &Mouse,
-    mouse_has_moved: bool
   ) -> Option<Events> {
     let mut events:Vec<Event> = vec![];
     let mouse_is_over =
@@ -69,8 +76,22 @@ impl EventSystem {
       self
       .entities_mouse_is_over
       .contains(&ent.id());
+    let mouse_has_moved =
+      (mouse.x, mouse.y) != (self.mouse.x, self.mouse.y);
+    let left_went_down =
+      mouse.left_btn_down && !self.mouse.left_btn_down;
+    let left_went_up =
+      !mouse.left_btn_down && self.mouse.left_btn_down;
 
     if mouse_is_over {
+      if left_went_up {
+        events
+          .push(Event::MouseUp);
+      } else if left_went_down {
+        events
+          .push(Event::MouseDown);
+      }
+
       if was_previously_over {
         if mouse_has_moved {
           events
@@ -148,11 +169,9 @@ impl<'a> System<'a> for EventSystem {
       });
 
     // Figure out the new events
-    let mouse_has_moved =
-      self.mouse != *mouse;
     for (ent, element_box) in (&entities, &element_boxes).join() {
       self
-        .determine_current_events(ent, element_box, &mouse, mouse_has_moved)
+        .determine_current_events(ent, element_box, &mouse)
         .into_iter()
         .for_each(|evs| {
           events

@@ -27,26 +27,10 @@ use picture::Picture;
 use systems::event::Mouse;
 
 
-/// Used to update the button from whatever owns the button.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MouseUpdate {
-  /// The mouse x in global coordinates
-  pub x: i32,
-  /// The mouse y in global coordinates
-  pub y: i32,
-
-  pub left_is_down: bool,
-
-  pub middle_is_down: bool,
-
-  pub right_is_down: bool,
-}
-
-
 /// Updates that are given unto widgets from their owners.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Update {
-  Mouse(MouseUpdate),
+  Mouse(Mouse),
   Quit
 }
 
@@ -151,12 +135,12 @@ pub fn mk_update(event: &event::Event) -> Option<Update> {
     event::Event::MouseMotion { x, y, mousestate, ..} => {
       Some (
         Update::Mouse(
-          MouseUpdate {
+          Mouse {
             x: *x,
             y: *y,
-            left_is_down: mousestate.left(),
-            middle_is_down: mousestate.middle(),
-            right_is_down: mousestate.right()
+            left_btn_down: mousestate.left(),
+            middle_btn_down: mousestate.middle(),
+            right_btn_down: mousestate.right()
           }
         )
       )
@@ -164,12 +148,12 @@ pub fn mk_update(event: &event::Event) -> Option<Update> {
     event::Event::MouseButtonDown { x, y, mouse_btn: MouseButton::Left, ..} => {
       Some (
         Update::Mouse(
-          MouseUpdate {
+          Mouse {
             x: *x,
             y: *y,
-            left_is_down: true,
-            middle_is_down: false,
-            right_is_down: false
+            left_btn_down: true,
+            middle_btn_down: false,
+            right_btn_down: false
           }
         )
       )
@@ -177,12 +161,12 @@ pub fn mk_update(event: &event::Event) -> Option<Update> {
     event::Event::MouseButtonUp { x, y, mouse_btn: MouseButton::Left, ..} => {
       Some(
         Update::Mouse(
-          MouseUpdate {
+          Mouse {
             x: *x,
             y: *y,
-            left_is_down: false,
-            middle_is_down: false,
-            right_is_down: false
+            left_btn_down: false,
+            middle_btn_down: false,
+            right_btn_down: false
           }
         )
       )
@@ -191,10 +175,10 @@ pub fn mk_update(event: &event::Event) -> Option<Update> {
       Some(Update::Quit)
     }
     event::Event::KeyDown { keycode: Some(Keycode::Q), keymod, ..} => {
-      let ctrl_is_down =
+      let ctrl_btn_down =
         keymod.contains(Mod::LCTRLMOD)
         || keymod.contains(Mod::RCTRLMOD);
-      if ctrl_is_down {
+      if ctrl_btn_down {
         Some(Update::Quit)
       } else {
         None
@@ -355,6 +339,11 @@ fn main() {
     )
     .build(&mut ui);
 
+  let label_background =
+    Picture::new()
+    .set_color(0, 0, 128, 255)
+    .fill_rect(0, 0, lw, lh);
+
   let mut event_pump =
     sdl
     .event_pump()
@@ -376,32 +365,26 @@ fn main() {
       .for_each(|update| {
         match update {
           Update::Quit => {}
-          Update::Mouse(MouseUpdate { x, y, .. }) => {
-            ui
-              .update_mouse(
-                Mouse {
-                  x: *x,
-                  y: *y
-                }
-              );
+          Update::Mouse(mouse) => {
+            ui.update_mouse(mouse.clone());
           }
         }
       });
 
-    ui
-      .maintain(&mut rasterizer);
+    ui.maintain(&mut rasterizer);
 
     if ui.has_event(label, Event::MouseOver) {
       println!("Mouse is over label!");
+      ui.update(label, Some(label_background.clone()));
     }
 
     if ui.has_event(label, Event::MouseOut) {
       println!("Mouse is out of label!");
+      ui.update::<Picture>(label, None);
     }
 
     if ui.has_event(label, Event::MouseMove) {
       println!("Mouse moving label!");
     }
-
   }
 }

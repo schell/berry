@@ -8,14 +8,14 @@ use super::systems::shrinkwrap::{ContentSize, ShrinkwrapSystem};
 use super::rasterizer::{Rasterizer, DrawingSystemData};
 
 
-pub struct UI<'a, 'b> {
+pub struct UI<'a> {
   pub world: World,
-  dispatcher: Dispatcher<'a, 'b>
+  dispatcher: Dispatcher<'a, 'a>
 }
 
 
-impl<'a, 'b> UI<'a, 'b> {
-  pub fn new<'c, 'd>() -> UI<'c, 'd> {
+impl<'a> UI<'a> {
+  pub fn new<'c>() -> UI<'c> {
     let mut world
       = World::new();
 
@@ -46,23 +46,34 @@ impl<'a, 'b> UI<'a, 'b> {
     *mouse_rez = mouse;
   }
 
-  pub fn update<C:Component>(&mut self, ent: &Entity, component:C) {
+  pub fn update<C:Component>(&mut self, ent: Entity, may_component:Option<C>) {
     let mut data:WriteStorage<C> =
       self
       .world
       .system_data();
-    data
-      .insert(*ent, component)
-      .unwrap();
+    if let Some(c) = may_component {
+      data
+        .insert(ent, c)
+        .unwrap();
+    } else {
+      data
+        .remove(ent);
+    }
   }
 
-  pub fn has_event(&self, ent: Entity, event:Event) -> bool {
-    let data:ReadStorage<Events> =
+  pub fn get<C:Component + Clone>(&self, ent:Entity) -> Option<C> {
+    let data:ReadStorage<C> =
       self
       .world
       .system_data();
     data
       .get(ent)
+      .cloned()
+  }
+
+  pub fn has_event(&self, ent: Entity, event:Event) -> bool {
+    self
+      .get::<Events>(ent)
       .map(|evs| evs.0.contains(&event))
       .unwrap_or(false)
   }
@@ -187,16 +198,6 @@ impl<'a, 'b> UI<'a, 'b> {
       .map(|elbox| {
         (elbox.x, elbox.y)
       })
-  }
-
-  pub fn get<T:Component + Clone>(&self, ent: Entity) -> Option<T> {
-    let comps:ReadStorage<T> =
-      self
-      .world
-      .system_data();
-    comps
-      .get(ent)
-      .cloned()
   }
 
   pub fn stage(&self) -> Stage {

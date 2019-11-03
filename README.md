@@ -19,8 +19,9 @@ sudo apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
 then `cargo build` or `cargo run`.
 
 ## TODO (besides the ones found in the source code)
-[ ] screenshots
-[ ] documentation
-[ ] examples
-[ ] wasm/emscripten backends
-[ ] place berry with respect to other GUIs (https://www.reddit.com/r/rust/comments/dr04ce/reclutch_a_simple_rust_ui_foundation/f6d4i9r?utm_source=share&utm_medium=web2x)
+- [ ] screenshots
+- [ ] documentation
+- [ ] examples
+- [ ] wasm/emscripten backends
+- [ ] place berry with respect to
+  [other GUIs](https://www.reddit.com/r/rust/comments/dr04ce/reclutch_a_simple_rust_ui_foundation/f6d4i9r?utm_source=share&utm_medium=web2x)
