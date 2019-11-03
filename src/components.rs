@@ -14,6 +14,7 @@ pub use constraints::*;
 use super::UI;
 use super::picture::Picture;
 use super::systems::shrinkwrap::ShrinkwrapRequest;
+pub use super::systems::event::{Event, Events};
 
 
 #[derive(Clone, Component, Debug, PartialEq)]
@@ -31,6 +32,22 @@ impl ElementBox {
     ElementBox {
       x: 0, y: 0, width: 0, height: 0
     }
+  }
+
+  pub fn left(&self) -> i32 {
+    self.x
+  }
+
+  pub fn right(&self) -> i32 {
+    self.x + self.width as i32
+  }
+
+  pub fn top(&self) -> i32 {
+    self.y
+  }
+
+  pub fn bottom(&self) -> i32 {
+    self.y + self.height as i32
   }
 }
 

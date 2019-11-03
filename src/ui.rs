@@ -2,6 +2,7 @@ use specs::prelude::*;
 
 use super::WindowSize;
 use super::components::*;
+use super::systems::event::{EventSystem, Mouse};
 use super::systems::layout::*;
 use super::systems::shrinkwrap::{ContentSize, ShrinkwrapSystem};
 use super::rasterizer::{Rasterizer, DrawingSystemData};
@@ -26,6 +27,7 @@ impl<'a, 'b> UI<'a, 'b> {
       .with(ShrinkwrapSystem, "shrinkwrap", &[])
       .with(LayoutSystem::<VariableX>::new(), "layout_x", &[])
       .with(LayoutSystem::<VariableY>::new(), "layout_y", &[])
+      .with(EventSystem::new(), "event", &[])
       .build();
     dispatcher
       .setup(&mut world);
@@ -34,6 +36,35 @@ impl<'a, 'b> UI<'a, 'b> {
       world,
       dispatcher
     }
+  }
+
+  pub fn update_mouse(&mut self, mouse:Mouse) {
+    let mut mouse_rez: Write<Mouse> =
+      self
+      .world
+      .system_data();
+    *mouse_rez = mouse;
+  }
+
+  pub fn update<C:Component>(&mut self, ent: &Entity, component:C) {
+    let mut data:WriteStorage<C> =
+      self
+      .world
+      .system_data();
+    data
+      .insert(*ent, component)
+      .unwrap();
+  }
+
+  pub fn has_event(&self, ent: Entity, event:Event) -> bool {
+    let data:ReadStorage<Events> =
+      self
+      .world
+      .system_data();
+    data
+      .get(ent)
+      .map(|evs| evs.0.contains(&event))
+      .unwrap_or(false)
   }
 
   pub fn maintain(&mut self, rasterizer: &mut Rasterizer) {

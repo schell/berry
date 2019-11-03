@@ -6,7 +6,7 @@ extern crate specs_derive;
 use sdl2::Sdl;
 use sdl2::video::WindowContext;
 use sdl2::ttf::Sdl2TtfContext;
-use sdl2::event::Event;
+use sdl2::event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
@@ -24,6 +24,7 @@ use components::*;
 use rasterizer::*;
 use ui::*;
 use picture::Picture;
+use systems::event::Mouse;
 
 
 /// Used to update the button from whatever owns the button.
@@ -145,9 +146,9 @@ pub fn new_contexts(
 
 
 /// Maps sdl2 events into "updates"
-pub fn mk_update(event: &Event) -> Option<Update> {
+pub fn mk_update(event: &event::Event) -> Option<Update> {
   match event {
-    Event::MouseMotion { x, y, mousestate, ..} => {
+    event::Event::MouseMotion { x, y, mousestate, ..} => {
       Some (
         Update::Mouse(
           MouseUpdate {
@@ -160,7 +161,7 @@ pub fn mk_update(event: &Event) -> Option<Update> {
         )
       )
     }
-    Event::MouseButtonDown { x, y, mouse_btn: MouseButton::Left, ..} => {
+    event::Event::MouseButtonDown { x, y, mouse_btn: MouseButton::Left, ..} => {
       Some (
         Update::Mouse(
           MouseUpdate {
@@ -173,7 +174,7 @@ pub fn mk_update(event: &Event) -> Option<Update> {
         )
       )
     }
-    Event::MouseButtonUp { x, y, mouse_btn: MouseButton::Left, ..} => {
+    event::Event::MouseButtonUp { x, y, mouse_btn: MouseButton::Left, ..} => {
       Some(
         Update::Mouse(
           MouseUpdate {
@@ -186,10 +187,10 @@ pub fn mk_update(event: &Event) -> Option<Update> {
         )
       )
     }
-    Event::Quit {..} => {
+    event::Event::Quit {..} => {
       Some(Update::Quit)
     }
-    Event::KeyDown { keycode: Some(Keycode::Q), keymod, ..} => {
+    event::Event::KeyDown { keycode: Some(Keycode::Q), keymod, ..} => {
       let ctrl_is_down =
         keymod.contains(Mod::LCTRLMOD)
         || keymod.contains(Mod::RCTRLMOD);
@@ -370,7 +371,37 @@ fn main() {
       break 'mainloop;
     }
 
+    may_update
+      .iter()
+      .for_each(|update| {
+        match update {
+          Update::Quit => {}
+          Update::Mouse(MouseUpdate { x, y, .. }) => {
+            ui
+              .update_mouse(
+                Mouse {
+                  x: *x,
+                  y: *y
+                }
+              );
+          }
+        }
+      });
+
     ui
       .maintain(&mut rasterizer);
+
+    if ui.has_event(label, Event::MouseOver) {
+      println!("Mouse is over label!");
+    }
+
+    if ui.has_event(label, Event::MouseOut) {
+      println!("Mouse is out of label!");
+    }
+
+    if ui.has_event(label, Event::MouseMove) {
+      println!("Mouse moving label!");
+    }
+
   }
 }
