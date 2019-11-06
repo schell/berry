@@ -21,6 +21,7 @@ pub type PictureCache<'ctx> = HashMap<Picture, Texture<'ctx>>;
 pub type DrawingSystemData<'a> = (
   Entities<'a>,
   ReadStorage<'a, ElementBox>,
+  ReadStorage<'a, Invisible>,
   ReadStorage<'a, Name>,
   ReadStorage<'a, Picture>,
   ReadStorage<'a, Text>,
@@ -234,7 +235,7 @@ impl<'ctx> Rasterizer<'ctx> {
 
   pub fn run_sdl2_drawing<'a>(
     &mut self,
-    (entities, element_boxes, names, pictures, texts, mut _window_size): DrawingSystemData<'a>
+    (entities, element_boxes, invisibles, names, pictures, texts, mut _window_size): DrawingSystemData<'a>
   ) {
     let canvas =
       self
@@ -247,81 +248,88 @@ impl<'ctx> Rasterizer<'ctx> {
     canvas
       .clear();
 
-    // Run through each entity and render it to the screen
-    for ent in (&entities).join() {
-      let mut draw_tex = |tex: &Texture| {
+    // Run through each visible entity and render it to the screen
+    let mut renderables:Vec<(&Texture, ElementBox)> =
+      (&entities, !&invisibles)
+      .join()
+      .flat_map(|(ent, ())| {
+        let mut renders = vec![];
         let may_name =
           names
           .get(ent);
-        let may_el =
+        let el =
           element_boxes
-          .get(ent);
-        let x =
-          may_el
-          .map(|el| el.x)
-          .unwrap_or(0);
-        let y =
-          may_el
-          .map(|el| el.y)
-          .unwrap_or(0);
-        let TextureQuery{ width: tw, height: th, ..} =
-          tex
-          .query();
-        let w =
-          may_el
-          .map(|el| el.width)
-          .unwrap_or(0);
-        let w =
-          if w == 0 {
-            tw
-          } else {
-            w
-          };
-        assert!(w != 0, format!("width of {:?} = {:?}", may_name, w));
-        let h =
-          may_el
-          .map(|el| el.height)
-          .unwrap_or(0);
-        let h =
-          if h == 0 {
-            th
-          } else {
-            h
-          };
-        assert!(h != 0, format!("height of {:?} = {:?}", may_name, h));
+          .get(ent)
+          .cloned()
+          .unwrap_or(ElementBox::new());
+
+        let mk_box = |tex: &Texture| -> ElementBox {
+          let TextureQuery{ width: tw, height: th, ..} =
+            tex
+            .query();
+
+          let mut el = el.clone();
+
+          if el.width == 0 {
+              el.width = tw;
+          }
+          assert!(el.width != 0, format!("width of {:?} = {:?}", may_name, el.width));
+          if el.height == 0 {
+            el.height = th;
+          }
+          assert!(el.height != 0, format!("height of {:?} = {:?}", may_name, el.height));
+
+          //println!("{:?} {:?}", may_name, el);
+          el
+        };
+
+        // If this thing is a piece of text, draw that
+        texts
+          .get(ent)
+          .map(|text| {
+            let tex =
+              self
+              .text_cache
+              .get(text)
+              .expect("Text was not cached! This should be impossible");
+            renders
+              .push((tex, mk_box(tex)));
+          });
+
+        // If this thing is a rasterized picture, draw that
+        pictures
+          .get(ent)
+          .map(|pic| {
+            let tex =
+              self
+              .picture_cache
+              .get(pic)
+              .expect("Picture was not cached! This should be impossible");
+            renders
+              .push((tex, mk_box(tex)));
+          });
+
+        renders
+      })
+      .collect::<Vec<_>>();
+    renderables
+      .sort_by(|(_, el_a), (_, el_b)| {
+        el_a.z.cmp(&el_b.z)
+      });
+
+    renderables
+      .into_iter()
+      .for_each(|(tex, el)| {
         canvas
           .copy(
             tex,
             None,
-            Some(Rect::new(x,y,w,h))
+            Some(
+              Rect::new(el.x, el.y, el.width, el.height)
+            )
           )
           .unwrap();
-      };
-
-      // If this thing is a piece of text, draw that
-      texts
-        .get(ent)
-        .map(|text| {
-          let tex =
-            self
-            .text_cache
-            .get(text)
-            .expect("Text was not cached! This should be impossible");
-          draw_tex(tex);
-        });
-
-      // If this thing is a rasterized picture, draw that
-      pictures
-        .get(ent)
-        .map(|pic| {
-          let tex =
-            self
-            .picture_cache
-            .get(pic)
-            .expect("Picture was not cached! This should be impossible");
-          draw_tex(tex);
-        });
-    }
+      });
 
     canvas
       .present();

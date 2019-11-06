@@ -3,7 +3,7 @@ extern crate specs;
 #[macro_use]
 extern crate specs_derive;
 
-use sdl2::Sdl;
+use sdl2::{EventPump, Sdl};
 use sdl2::video::WindowContext;
 use sdl2::ttf::Sdl2TtfContext;
 use sdl2::event;
@@ -25,6 +25,7 @@ use rasterizer::*;
 use ui::*;
 use picture::Picture;
 use systems::event::Mouse;
+use systems::button::ButtonBuilder;
 
 
 /// Updates that are given unto widgets from their owners.
@@ -207,19 +208,9 @@ impl Default for WindowSize {
 }
 
 
-fn main() {
-  let (sdl, mut canvas, tex_creator, ttf) =
-    new_contexts("berry playground", (800, 600));
-
-  let mut rasterizer =
-    Rasterizer::new(&mut canvas, &tex_creator, &ttf);
-
-  let mut ui = UI::new();
-
-;
-
-  let pic =
-    EntityBuilder::new()
+fn banner_and_pics(ui: &mut UI, rasterizer: &mut Rasterizer) {
+    let pic =
+    ElementBuilder::new()
     .name("pic")
     .picture(
       &Picture::new()
@@ -231,7 +222,7 @@ fn main() {
     .left(100)
     .top(100)
     .shrink_to_contents()
-    .build(&mut ui);
+    .build(ui);
 
   assert!(ui.get::<Name>(pic).is_some());
 
@@ -244,16 +235,16 @@ fn main() {
     .get_text(&text_def);
 
   let label =
-    EntityBuilder::new()
+    ElementBuilder::new()
     .name("label")
     .text(&text_def)
     .left(pic.right())
     .top(pic.bottom() - 10.0)
     .width(lw)
     .height(lh)
-    .build(&mut ui);
+    .build(ui);
 
-  ui.maintain(&mut rasterizer);
+  ui.maintain(rasterizer);
 
   let pic_pos =
     ui
@@ -286,39 +277,39 @@ fn main() {
     .get_picture(&corner_square_pic);
 
   let _corner_square =
-    EntityBuilder::new()
+    ElementBuilder::new()
     .name("corner_square")
     .picture(&corner_square_pic)
     .width(25)
     .height(25)
     .right(ui.stage().right())
     .bottom(ui.stage().bottom())
-    .build(&mut ui);
+    .build(ui);
 
-  ui.maintain(&mut rasterizer);
+  ui.maintain(rasterizer);
 
   let box1 =
-    EntityBuilder::new()
+    ElementBuilder::new()
     .name("box1")
     .picture(
       &Picture::new()
         .set_color(255, 0, 0, 128)
         .fill_rect(0, 0, 50, 100)
     )
-    .build(&mut ui);
+    .build(ui);
 
   let box2 =
-    EntityBuilder::new()
+    ElementBuilder::new()
     .name("box2")
     .picture(
       &Picture::new()
         .set_color(0, 255, 0, 128)
         .fill_rect(0, 0, 50, 100)
     )
-    .build(&mut ui);
+    .build(ui);
 
   let _box_relation =
-    EntityBuilder::new()
+    ElementBuilder::new()
     .x_constraints(
       vec![
         box1.left().is(0),
@@ -337,12 +328,71 @@ fn main() {
         box2.height().is(100)
       ]
     )
-    .build(&mut ui);
+    .build(ui);
 
-  let label_background =
+  let _label_background =
     Picture::new()
     .set_color(0, 0, 128, 255)
     .fill_rect(0, 0, lw, lh);
+}
+
+
+fn sdl2_maintain(event_pump: &mut EventPump, rasterizer: &mut Rasterizer, ui: &mut UI) -> Option<Update> {
+  let may_update:Option<Update> =
+    event_pump
+    .wait_event_timeout(10)
+    .map(|event| mk_update(&event))
+    .unwrap_or(None);
+
+ may_update
+    .iter()
+    .for_each(|update| {
+      match update {
+        Update::Quit => {}
+        Update::Mouse(mouse) => {
+          ui.update_mouse(mouse.clone());
+        }
+      }
+    });
+
+  ui.maintain(rasterizer);
+
+  may_update
+}
+
+
+fn main() {
+  let (sdl, mut canvas, tex_creator, ttf) =
+    new_contexts("berry playground", (800, 600));
+
+  let mut rasterizer =
+    Rasterizer::new(&mut canvas, &tex_creator, &ttf);
+
+  let mut ui = UI::new();
+
+  let label =
+    ElementBuilder::new()
+    .text(
+      &Text::new("waiting")
+    )
+    .left(10)
+    .top(10)
+    .build(&mut ui);
+
+  let button =
+    ButtonBuilder::new("Press me!")
+    .build(&mut ui, &mut rasterizer);
+
+  ElementBuilder::new()
+    .left(10)
+    .top(label.top() + label.height() + 10)
+    .update(&mut ui, button);
+
+  ui.maintain(&mut rasterizer);
+
+  println!("label_size: {:?}", ui.get_size(label));
+
+  let mut num_clicks = 0;
 
   let mut event_pump =
     sdl
@@ -350,41 +400,21 @@ fn main() {
     .unwrap();
 
   'mainloop: loop {
-    let may_update:Option<Update> =
-      event_pump
-      .wait_event_timeout(1000/12)
-      .map(|event| mk_update(&event))
-      .unwrap_or(None);
-
-    if may_update == Some(Update::Quit) {
+    let should_quit =
+      sdl2_maintain(&mut event_pump, &mut rasterizer, &mut ui)
+      == Some(Update::Quit);
+    if should_quit {
       break 'mainloop;
     }
 
-    may_update
-      .iter()
-      .for_each(|update| {
-        match update {
-          Update::Quit => {}
-          Update::Mouse(mouse) => {
-            ui.update_mouse(mouse.clone());
-          }
-        }
-      });
-
-    ui.maintain(&mut rasterizer);
-
-    if ui.has_event(label, Event::MouseOver) {
-      println!("Mouse is over label!");
-      ui.update(label, Some(label_background.clone()));
-    }
-
-    if ui.has_event(label, Event::MouseOut) {
-      println!("Mouse is out of label!");
-      ui.update::<Picture>(label, None);
-    }
-
-    if ui.has_event(label, Event::MouseMove) {
-      println!("Mouse moving label!");
+    if ui.has_event(button, Event::MouseUp) {
+      println!("label_size: {:?}", ui.get_size(label));
+      num_clicks += 1;
+      ElementBuilder::new()
+        .text(
+          &Text::new(&format!("{} clicks", num_clicks))
+        )
+        .update(&mut ui, label);
     }
   }
 }

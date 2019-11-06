@@ -13,6 +13,7 @@ use super::super::components::{
   Constraints,
   VariableX,
   VariableY,
+  VariableZ,
   Name,
 };
 
@@ -35,6 +36,7 @@ where
   R: Any + Default + Send + Sync
 {
 
+  fn name(&self) -> &str;
   fn solver_mut(&mut self) -> &mut Option<Solver<T>>;
   fn reader_mut(&mut self) -> &mut Option<ReaderId<ComponentEvent>>;
   fn cache_mut(&mut self) -> &mut HashMap<u32, Constraints<T>>;
@@ -104,6 +106,11 @@ where
           .expect(&format!("Could not suggest value for edit variable {:?}", e));
       });
 
+    let name:String =
+      self
+        .name()
+        .to_string();
+
     let reader =
       self
       .reader_mut()
@@ -120,7 +127,16 @@ where
         .expect("Could not find inserted constraint");
       the_solver
         .add_constraints(new_constraints.0.clone())
-        .expect("Could not add new constraints");
+        .expect(
+          &format!(
+            "{:?} could not add new constraints for: {:?}",
+            name,
+            names
+              .get(ent)
+              .map(|Name(s)| s.clone())
+              .unwrap_or("unnamed entity".to_string()),
+          )
+        );
       cache
         .insert(id, new_constraints.clone());
     };
@@ -128,13 +144,15 @@ where
     let remove = |id: u32, the_solver: &mut Solver<T>, cache: &mut HashMap<u32, Constraints<T>>| {
       cache
         .remove(&id)
-        .expect("Could not remove constraints from cache")
-        .0
         .into_iter()
-        .for_each(|c| {
-          the_solver
-            .remove_constraint(&c)
-            .expect("Could not remove constraint");
+        .for_each(|cs| {
+          cs.0
+            .into_iter()
+            .for_each(|c| {
+              the_solver
+                .remove_constraint(&c)
+                .expect("Could not remove constraint");
+            });
         });
     };
 
@@ -144,6 +162,7 @@ where
       .for_each(|event| {
         match event {
           ComponentEvent::Inserted(id) => {
+            remove(*id, &mut solver, self.cache_mut());
             insert(*id, &mut solver, self.cache_mut());
           }
           ComponentEvent::Modified(id) => {
@@ -194,7 +213,27 @@ where
 }
 
 
+impl<'a, T> System<'a> for LayoutSystem<T>
+where
+  T: Debug + Clone + Eq + Hash + Send + Sync + Any,
+LayoutSystem<T>: IsLayoutSystem<T, WindowSize>
+{
+  type SystemData = LayoutSystemData<'a, T, WindowSize>;
+
+  fn setup(&mut self, world: &mut World) {
+    (self as &mut IsLayoutSystem<T, WindowSize>).setup(world)
+  }
+
+  fn run(&mut self, data: Self::SystemData) {
+    (self as &mut IsLayoutSystem<T, WindowSize>).run(data);
+  }
+}
+
+
 impl IsLayoutSystem<VariableX, WindowSize> for LayoutSystem<VariableX> {
+  fn name(&self) -> &str {
+    "LayoutSystemX"
+  }
   fn solver_mut(&mut self) -> &mut Option<Solver<VariableX>> {
     &mut self.solver
   }
@@ -258,25 +297,16 @@ impl IsLayoutSystem<VariableX, WindowSize> for LayoutSystem<VariableX> {
       }
       _ => {}
     };
-    //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
-  }
-}
-
-
-impl<'a> System<'a> for LayoutSystem<VariableX> {
-  type SystemData = LayoutSystemData<'a, VariableX, WindowSize>;
-
-  fn setup(&mut self, world: &mut World) {
-    (self as &mut IsLayoutSystem<VariableX, WindowSize>).setup(world)
-  }
-
-  fn run(&mut self, data: Self::SystemData) {
-    (self as &mut IsLayoutSystem<VariableX, WindowSize>).run(data);
+    //println!("layout: {} = {:?}", var.to_pathy_string(&_names), val);
   }
 }
 
 
 impl IsLayoutSystem<VariableY, WindowSize> for LayoutSystem<VariableY> {
+  fn name(&self) -> &str {
+    "LayoutSystemY"
+  }
+
   fn solver_mut(&mut self) -> &mut Option<Solver<VariableY>> {
     &mut self.solver
   }
@@ -337,19 +367,62 @@ impl IsLayoutSystem<VariableY, WindowSize> for LayoutSystem<VariableY> {
       }
       _ => {}
     };
-    //println!("layout: {} = {:?}", var.to_pathy_string(&names), val);
+    //println!("layout: {} = {:?}", var.to_pathy_string(&_names), val);
   }
 }
 
-
-impl<'a> System<'a> for LayoutSystem<VariableY> {
-  type SystemData = LayoutSystemData<'a, VariableY, WindowSize>;
-
-  fn setup(&mut self, world: &mut World) {
-    (self as &mut IsLayoutSystem<VariableY, WindowSize>).setup(world)
+impl IsLayoutSystem<VariableZ, WindowSize> for LayoutSystem<VariableZ> {
+  fn name(&self) -> &str {
+    "LayoutSystemZ"
   }
 
-  fn run(&mut self, data: Self::SystemData) {
-    (self as &mut IsLayoutSystem<VariableY, WindowSize>).run(data);
+  fn solver_mut(&mut self) -> &mut Option<Solver<VariableZ>> {
+    &mut self.solver
+  }
+
+  fn reader_mut(&mut self) -> &mut Option<ReaderId<ComponentEvent>> {
+    &mut self.reader
+  }
+
+  fn cache_mut(&mut self) -> &mut HashMap<u32, Constraints<VariableZ>> {
+    &mut self.cache
+  }
+
+  fn initial_constraints(&self) -> Constraints<VariableZ> {
+    Constraints(vec![])
+  }
+
+  fn edit_variables(&self) -> Vec<VariableZ> {
+    vec![]
+  }
+
+  fn get_edit_variable_value(&self, variable: &VariableZ, _window_size: &Read<WindowSize>) -> f64 {
+    match variable {
+      _ => { panic!("No support for z index as edit variables") }
+    }
+  }
+
+  fn update_variable_value(
+    &self,
+    element_boxes: &mut WriteStorage<ElementBox>,
+    _names: &ReadStorage<Name>,
+    VariableZ(ent): VariableZ,
+    val: f64
+  ) {
+    let mut el =
+      element_boxes
+      .get(ent)
+      .cloned()
+      .unwrap_or(ElementBox::new());
+    el.z = val as i32;
+    element_boxes
+      .insert(ent, el)
+      .expect("Could not update element box x");
+    let _name =
+      _names
+      .get(ent)
+      .map(|Name(s)| s.clone())
+      .unwrap_or("unknown".to_string());
+    //println!("layout: {}.z = {:?}", _name, val);
   }
 }

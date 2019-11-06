@@ -1,4 +1,4 @@
-use cassowary::*;
+pub use cassowary::*;
 use specs::prelude::{
   Component,
   Entities,
@@ -13,8 +13,13 @@ mod constraints;
 pub use constraints::*;
 use super::UI;
 use super::picture::Picture;
-use super::systems::shrinkwrap::ShrinkwrapRequest;
+pub use super::systems::shrinkwrap::ContentSize;
 pub use super::systems::event::{Event, Events};
+
+
+#[derive(Clone, Component, Debug, PartialEq)]
+#[storage(HashMapStorage)]
+pub struct Invisible;
 
 
 #[derive(Clone, Component, Debug, PartialEq)]
@@ -22,6 +27,7 @@ pub use super::systems::event::{Event, Events};
 pub struct ElementBox {
   pub x: i32,
   pub y: i32,
+  pub z: i32,
   pub width: u32,
   pub height: u32,
 }
@@ -30,7 +36,7 @@ pub struct ElementBox {
 impl ElementBox {
   pub fn new() -> ElementBox {
     ElementBox {
-      x: 0, y: 0, width: 0, height: 0
+      x: 0, y: 0, z: 0, width: 0, height: 0
     }
   }
 
@@ -48,6 +54,10 @@ impl ElementBox {
 
   pub fn bottom(&self) -> i32 {
     self.y + self.height as i32
+  }
+
+  pub fn z_index(&self) -> i32 {
+    self.z
   }
 }
 
@@ -97,20 +107,21 @@ type EntityBuildData<'a> = (
   Entities<'a>,
   WriteStorage<'a, Constraints<VariableX>>,
   WriteStorage<'a, Constraints<VariableY>>,
+  WriteStorage<'a, Constraints<VariableZ>>,
   WriteStorage<'a, ElementBox>,
   WriteStorage<'a, Name>,
   WriteStorage<'a, Picture>,
-  WriteStorage<'a, ShrinkwrapRequest>,
   WriteStorage<'a, Text>
 );
 
 
 /// A builder for a UI entity.
-pub struct EntityBuilder {
+pub struct ElementBuilder {
   left: Option<Expression<VariableX>>,
   width: Option<Expression<VariableX>>,
   right: Option<Expression<VariableX>>,
   top: Option<Expression<VariableY>>,
+  z: Option<Expression<VariableZ>>,
   height: Option<Expression<VariableY>>,
   bottom: Option<Expression<VariableY>>,
   text: Option<Text>,
@@ -118,17 +129,19 @@ pub struct EntityBuilder {
   name: Option<Name>,
   x_constraints: Option<Vec<Constraint<VariableX>>>,
   y_constraints: Option<Vec<Constraint<VariableY>>>,
+  z_constraints: Option<Vec<Constraint<VariableZ>>>,
   shrinkwrap: bool
 }
 
 
-impl EntityBuilder {
-  pub fn new() -> EntityBuilder {
-    EntityBuilder {
+impl ElementBuilder {
+  pub fn new() -> ElementBuilder {
+    ElementBuilder {
       left: None,
       width: None,
       right: None,
       top: None,
+      z: None,
       height: None,
       bottom: None,
       picture: None,
@@ -136,6 +149,7 @@ impl EntityBuilder {
       name: None,
       x_constraints: None,
       y_constraints: None,
+      z_constraints: None,
       shrinkwrap: false
     }
   }
@@ -194,6 +208,12 @@ impl EntityBuilder {
     eb
   }
 
+  pub fn z_index<T: Into<Expression<VariableZ>>>(self, t:T) -> Self {
+    let mut eb = self;
+    eb.z = Some(t.into());
+    eb
+  }
+
   pub fn picture(self, pic: &Picture) -> Self {
     let mut eb = self;
     eb.picture = Some(pic.clone());
@@ -212,70 +232,111 @@ impl EntityBuilder {
     eb
   }
 
+  pub fn z_constraints(self, zs:Vec<Constraint<VariableZ>>) -> Self {
+    let mut eb = self;
+    eb.z_constraints = Some(zs);
+    eb
+  }
+
+  pub fn update(self, ui: &mut UI, ent:Entity) {
+    ui.world
+      .exec(|data:EntityBuildData| self.build_with(data, Some(ent)));
+  }
+
   fn build_with(
     self,
     (entities,
      mut constraints_x,
      mut constraints_y,
+     mut constraints_z,
      mut element_boxes,
      mut names,
      mut pictures,
-     mut shrinkwrap_reqs,
      mut texts
-    ):EntityBuildData
+    ):EntityBuildData,
+    may_ent: Option<Entity>
   ) -> Entity {
-
     let ent =
-      entities
-      .create();
+      may_ent
+      .unwrap_or(entities.create());
 
-    let may_xs:Vec<Option<Constraint<VariableX>>> =
-      vec![
-        self.left.map(|x| ent.left().is(x)),
-        self.width.map(|x| ent.width().is(x)),
-        self.right.map(|x| ent.right().is(x)),
-        // We need a concrete relationship between left, width, and right
-        Some(ent.right().is(ent.left() + ent.width()))
-      ];
-    let mut xs:Vec<Constraint<VariableX>> =
-      may_xs
-      .into_iter()
-      .filter_map(|expx:Option<Constraint<VariableX>>| expx)
-      .into_iter()
-      .collect();
-    xs.extend(
-      self
-        .x_constraints
-        .unwrap_or(vec![])
+    let has_x_constraints =
+      self.left.is_some()
+      || self.width.is_some()
+      || self.right.is_some()
+      || self.x_constraints.is_some();
+    if has_x_constraints {
+      let may_xs:Vec<Option<Constraint<VariableX>>> =
+        vec![
+          self.left.map(|x| ent.left().is(x)),
+          self.width.map(|x| ent.width().is(x)),
+          self.right.map(|x| ent.right().is(x)),
+          // We need a concrete relationship between left, width, and right
+          Some(ent.right().is(ent.left() + ent.width()))
+        ];
+      let mut xs:Vec<Constraint<VariableX>> =
+        may_xs
         .into_iter()
-    );
-    constraints_x
-      .insert(ent, Constraints(xs))
-      .expect("Could not insert x constraints in EntityBuilder::build");
+        .filter_map(|expx:Option<Constraint<VariableX>>| expx)
+        .into_iter()
+        .collect();
+      xs.extend(
+        self
+          .x_constraints
+          .unwrap_or(vec![])
+          .into_iter()
+      );
+      constraints_x
+        .insert(ent, Constraints(xs))
+        .expect("Could not insert x constraints in ElementBuilder::build");
+    }
 
-    let may_ys:Vec<Option<Constraint<VariableY>>> =
-      vec![
-        self.top.map(|y| ent.top().is(y)),
-        self.height.map(|y| ent.height().is(y)),
-        self.bottom.map(|y| ent.bottom().is(y)),
-        // We need a concrete relationship between top, height, and bottom
-        Some(ent.bottom().is(ent.top() + ent.height()))
-      ];
-    let mut ys:Vec<Constraint<VariableY>> =
-      may_ys
-      .into_iter()
-      .filter_map(|expy:Option<Constraint<VariableY>>| expy)
-      .into_iter()
-      .collect();
-    ys.extend(
-      self
-        .y_constraints
-        .unwrap_or(vec![])
+    let has_y_constraints =
+      self.top.is_some()
+      || self.height.is_some()
+      || self.bottom.is_some()
+      || self.y_constraints.is_some();
+    if has_y_constraints {
+      let may_ys:Vec<Option<Constraint<VariableY>>> =
+        vec![
+          self.top.map(|y| ent.top().is(y)),
+          self.height.map(|y| ent.height().is(y)),
+          self.bottom.map(|y| ent.bottom().is(y)),
+          // We need a concrete relationship between top, height, and bottom
+          Some(ent.bottom().is(ent.top() + ent.height()))
+        ];
+      let mut ys:Vec<Constraint<VariableY>> =
+        may_ys
         .into_iter()
-    );
-    constraints_y
-      .insert(ent, Constraints(ys))
-      .expect("Could not insert y constraints in EntityBuilder::build");
+        .filter_map(|expy:Option<Constraint<VariableY>>| expy)
+        .into_iter()
+        .collect();
+      ys.extend(
+        self
+          .y_constraints
+          .unwrap_or(vec![])
+          .into_iter()
+      );
+      constraints_y
+        .insert(ent, Constraints(ys))
+        .expect("Could not insert y constraints in ElementBuilder::build");
+    }
+
+    let mut zs:Vec<Constraint<VariableZ>> =
+      self
+      .z_constraints
+      .unwrap_or(vec![]);
+    self
+      .z
+      .into_iter()
+      .for_each(|z| {
+        zs.push(ent.z_index().is(z));
+      });
+    if zs.len() > 0 {
+      constraints_z
+        .insert(ent, Constraints(zs))
+        .expect("Could not insert z constraints in ElementBuilder::build");
+    }
 
     self
       .text
@@ -289,24 +350,18 @@ impl EntityBuilder {
       .name
       .map(|name| names.insert(ent, name));
 
-    element_boxes
-      .insert(ent, ElementBox::new())
-      .expect("Could not insert element box in EntityBuilder::build");
-
-    if self.shrinkwrap {
-      shrinkwrap_reqs
-        .insert(ent, ShrinkwrapRequest)
-        .expect("could not insert shrinkwrap request in EntityBuilder::build");
+    if !element_boxes.contains(ent) {
+      element_boxes
+        .insert(ent, ElementBox::new())
+        .expect("Could not insert element box in ElementBuilder::build");
     }
 
     ent
-
   }
 
   pub fn build(self, ui: &mut UI) -> Entity {
-    ui
-      .world
-      .exec(|data| self.build_with(data))
+    ui.world
+      .exec(|data:EntityBuildData| self.build_with(data, None))
   }
 }
 

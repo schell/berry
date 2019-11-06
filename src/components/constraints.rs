@@ -73,7 +73,12 @@ impl VariableY {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Component, Debug, Eq, Hash, PartialEq)]
+pub struct VariableZ(pub Entity);
+derive_syntax_for!(VariableZ);
+
+
+#[derive(Clone, Debug)]
 pub struct Constraints<T>(pub Vec<Constraint<T>>);
 
 
@@ -100,6 +105,11 @@ pub trait HasYConstraints {
 }
 
 
+pub trait HasZConstraints {
+  fn z_index(&self) -> Expression<VariableZ>;
+}
+
+
 impl HasXConstraints for Entity {
   fn left(&self) -> Expression<VariableX> {
     VariableX::Left(Some(*self)).into()
@@ -116,5 +126,12 @@ impl HasYConstraints for Entity {
   }
   fn height(&self) -> Expression<VariableY> {
     VariableY::Height(Some(*self)).into()
+  }
+}
+
+
+impl HasZConstraints for Entity {
+  fn z_index(&self) -> Expression<VariableZ> {
+    VariableZ(*self).into()
   }
 }
